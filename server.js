@@ -205,4 +205,64 @@ app.post("/webhook/retell", verifySecret, (req, res) => {
 app.get("/", (_req, res) => res.send("KindThai Retell + Google API (service account) — ready"));
 
 const PORT = process.env.PORT || 3000;
+
+const { google } = require("googleapis");
+
+/** TEMP DEBUG: raw freebusy + events in a window for a therapist */
+app.post("/_debug/window", async (req, res) => {
+  try {
+    const { therapistName, startIso, endIso } = req.body || {};
+    if (!therapistName || !startIso || !endIso) {
+      return res.status(400).json({ error: "therapistName, startIso, endIso required" });
+    }
+
+    const t = THERAPISTS.find(x => x.name.toLowerCase() === String(therapistName).toLowerCase());
+    if (!t) return res.status(404).json({ error: "Therapist not found" });
+
+    const auth = await getAuth();
+    const calendar = google.calendar({ version: "v3", auth });
+
+    // 1) Raw freebusy
+    const fb = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: startIso,
+        timeMax: endIso,
+        timeZone: TIMEZONE,
+        items: [{ id: t.calendarId }]
+      }
+    });
+
+    // 2) Events list in the same window
+    const evs = await calendar.events.list({
+      calendarId: t.calendarId,
+      timeMin: startIso,
+      timeMax: endIso,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 25
+    });
+
+    res.json({
+      ok: true,
+      therapist: t.name,
+      calendarId: t.calendarId,
+      timeWindow: { startIso, endIso, timeZone: TIMEZONE },
+      freebusyRaw: fb.data,
+      events: evs.data.items?.map(e => ({
+        id: e.id,
+        status: e.status,
+        summary: e.summary,
+        start: e.start,
+        end: e.end,
+        creator: e.creator,
+        organizer: e.organizer,
+        transparency: e.transparency,      // "transparent" for free
+        eventType: e.eventType,            // "default", "focusTime", etc.
+      })) || []
+    });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: String(e && e.message || e) });
+  }
+});
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+

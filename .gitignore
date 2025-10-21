@@ -1,0 +1,8 @@
+node_modules/
+.env
+service_account.json
+token.json
+*credentials*.json
+*oauth*.json
+npm-debug.log*
+.DS_Store

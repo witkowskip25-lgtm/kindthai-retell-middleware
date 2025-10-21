@@ -31,6 +31,35 @@ app.post("/availability", async (req, res) => {
     for (const t of list) {
       try {
         const free = await isFree(auth, t.calendarId, startIso, endIso, TIMEZONE);
+        results.push({ therapist: t.name, calendarId: t.calendarId, free, status: "ok" });
+      } catch (inner) {
+        results.push({
+          therapist: t.name,
+          calendarId: t.calendarId,
+          free: null,
+          status: "error",
+          error: String(inner.message || inner)
+        });
+      }
+    }
+
+    const freeTherapists = results.filter(r => r.free === true).map(r => r.therapist);
+    const anyFree = freeTherapists.length > 0;
+
+    res.json({ ok: true, anyFree, freeTherapists, availability: results });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});try {
+    const auth = await getAuth();
+    const list = preferredTherapist
+      ? THERAPISTS.filter(t => t.name.toLowerCase() === String(preferredTherapist).toLowerCase())
+      : THERAPISTS;
+
+    const results = [];
+    for (const t of list) {
+      try {
+        const free = await isFree(auth, t.calendarId, startIso, endIso, TIMEZONE);
         results.push({ therapist: t.name, calendarId: t.calendarId, free });
       } catch (inner) {
         results.push({ therapist: t.name, calendarId: t.calendarId, free: null, error: String(inner.message || inner) });
@@ -176,3 +205,4 @@ app.get("/", (_req, res) => res.send("KindThai + Google Calendar (service accoun
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+

@@ -132,7 +132,7 @@ app.post("/reschedule", async (req, res) => {
     let found = null;
 
     if (eventId) {
-      found = await findEventByIdAcross(auth, eventId);
+      found = await findEventByIdAcross(await getAuth(), eventId);
     } else if (clientName && oldStartIso) {
       found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: oldStartIso, windowMins: windowMins || 180 });
     } else {
@@ -319,6 +319,7 @@ app.post("/nlp/slot", async (req, res) => {
   }
 });
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 
 
 

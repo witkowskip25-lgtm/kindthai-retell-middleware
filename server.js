@@ -246,6 +246,12 @@ const PORT = process.env.PORT || 3000;
 
 const { google } = require("googleapis");
 
+
+async function getCalendarSafe() {
+  const auth = await getAuth();
+  const { google } = require("googleapis");
+  return google.calendar({ version: "v3", auth });
+}
 /** TEMP DEBUG: raw freebusy + events in a window for a therapist */
 app.post("/_debug/window", async (req, res) => {
   try {
@@ -359,6 +365,7 @@ app.post("/nlp/slot", async (req, res) => {
   }
 });
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 
 
 

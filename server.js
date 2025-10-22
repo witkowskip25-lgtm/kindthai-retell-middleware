@@ -110,14 +110,54 @@ async function findEventByIdAcross(auth, eventId) {
   return null;
 }
 
-async function findEventByClientAndTime(auth, { clientName, approxStartIso, windowMins = 180 }) {
-  const start = new Date(approxStartIso);
-  const min = new Date(start.getTime() - windowMins*60000).toISOString();
-  const max = new Date(start.getTime() + windowMins*60000).toISOString();
+async function findEventByClientAndTime(auth, {
+  clientName,
+  approxStartIso,
+  windowMins = 180,
+  forceCalendarId
+}) {
+  const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+  const calendar = await getCalendarSafe();
+  const approx = new Date(approxStartIso);
+  const min = new Date(approx.getTime() - windowMins * 60 * 1000).toISOString();
+  const max = new Date(approx.getTime() + windowMins * 60 * 1000).toISOString();
 
-  for (const t of THERAPISTS) {
-    const items = await searchEvents(auth, t.calendarId, { q: clientName, timeMin: min, timeMax: max, maxResults: 5 });
-    if (items.length) return { therapist: t, event: items[0] };
+  const lc = (s) => String(s || "").toLowerCase();
+  const target = lc(clientName);
+
+  const who = THERAPISTS || [];
+  const list = forceCalendarId
+    ? who.filter(t => t.calendarId === forceCalendarId)
+    : who;
+
+  for (const t of list) {
+    const evs = await calendar.events.list({
+      calendarId: t.calendarId,
+      timeMin: min,
+      timeMax: max,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 25,
+      q: clientName
+    });
+
+    const items = evs.data.items || [];
+    const match = items.find(e => {
+      const sum = lc(e.summary);
+      const desc = lc((e.description || ""));
+      return sum.includes(target) || desc.includes(target);
+    });
+
+    if (match) {
+      return {
+        therapist: t,
+        event: {
+          id: match.id,
+          start: match.start?.dateTime || match.start?.date,
+          end:   match.end?.dateTime   || match.end?.date
+        }
+      };
+    }
   }
   return null;
 }
@@ -167,7 +207,7 @@ app.post("/cancel", async (req, res) => {
     let found = null;
 
     if (eventId) {
-      found = await findEventByIdAcross(auth, eventId);
+      found = await findEventByIdAcross(await getAuth(), eventId);
     } else if (clientName && startIso) {
       found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: startIso, windowMins: windowMins || 180 });
     } else {
@@ -319,6 +359,7 @@ app.post("/nlp/slot", async (req, res) => {
   }
 });
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 
 
 

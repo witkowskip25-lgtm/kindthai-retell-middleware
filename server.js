@@ -51,8 +51,7 @@ app.post("/availability", async (req, res) => {
           calendarId: t.calendarId,
           free: null,
           status: "error",
-          error: String(inner.message || inner),
-        });
+          error: String(inner.message || inner)});
       }
     }
 
@@ -320,6 +319,7 @@ app.post("/nlp/slot", async (req, res) => {
   }
 });
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 
 
 

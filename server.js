@@ -35,7 +35,7 @@ app.post("/availability", async (req, res) => {
     return res.status(400).json({ error: "startIso and endIso required" });
   }
   try {
-    const auth = await getAuth();
+
     const list = preferredTherapist
       ? THERAPISTS.filter(t => t.name.toLowerCase() === String(preferredTherapist).toLowerCase())
       : THERAPISTS;
@@ -70,7 +70,6 @@ app.post("/book", async (req, res) => {
   const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
   if (!startIso || !endIso || !clientName) return res.status(400).json({ error: "startIso, endIso, clientName required" });
   try {
-    const auth = await getAuth();
 
     let candidates = THERAPISTS;
     if (therapistName) {
@@ -130,7 +129,7 @@ app.post("/reschedule", async (req, res) => {
   if (!newStartIso || !newEndIso) return res.status(400).json({ error: "newStartIso and newEndIso required" });
 
   try {
-    const auth = await getAuth();
+
     let found = null;
 
     if (eventId) {
@@ -165,7 +164,7 @@ app.post("/cancel", async (req, res) => {
   const { eventId, clientName, startIso, windowMins, therapistName } = req.body || {};
 
   try {
-    const auth = await getAuth();
+
     let found = null;
 
     if (eventId) {
@@ -219,8 +218,7 @@ app.post("/_debug/window", async (req, res) => {
     const t = THERAPISTS.find(x => x.name.toLowerCase() === String(therapistName).toLowerCase());
     if (!t) return res.status(404).json({ error: "Therapist not found" });
 
-    const auth = await getAuth();
-    const calendar = google.calendar({ version: "v3", auth });
+    const calendar = await getCalendarSafe();
 
     // 1) Raw freebusy
     const fb = await calendar.freebusy.query({
@@ -322,5 +320,6 @@ app.post("/nlp/slot", async (req, res) => {
   }
 });
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 
 

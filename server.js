@@ -43,7 +43,7 @@ app.post("/availability", async (req, res) => {
     const results = [];
     for (const t of list) {
       try {
-        const free = await isFree(auth, t.calendarId, startIso, endIso, TIMEZONE);
+        const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
         results.push({ therapist: t.name, calendarId: t.calendarId, free, status: "ok" });
       } catch (inner) {
         results.push({
@@ -78,7 +78,7 @@ app.post("/book", async (req, res) => {
 
     let chosen = null;
     for (const t of candidates) {
-      const free = await isFree(auth, t.calendarId, startIso, endIso, TIMEZONE);
+      const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
       if (free) { chosen = t; break; }
     }
     if (!chosen) return res.status(409).json({ ok:false, error: "No therapist available for that time." });
@@ -89,7 +89,7 @@ Client: ${clientName} (${clientPhone || "-"})
 Service: ${serviceName || "Massage"} (${duration || "?"} mins)
 Therapist: ${chosen.name}`;
 
-    const event = await createEvent(auth, chosen.calendarId, {
+    const event = await createEvent(await getAuth(), chosen.calendarId, {
       summary, description, startIso, endIso, timeZone: TIMEZONE
     });
 
@@ -134,7 +134,7 @@ app.post("/reschedule", async (req, res) => {
     if (eventId) {
       found = await findEventByIdAcross(auth, eventId);
     } else if (clientName && oldStartIso) {
-      found = await findEventByClientAndTime(auth, { clientName, approxStartIso: oldStartIso, windowMins: windowMins || 180 });
+      found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: oldStartIso, windowMins: windowMins || 180 });
     } else {
       return res.status(400).json({ error: "Provide eventId or (clientName + oldStartIso)" });
     }
@@ -145,10 +145,10 @@ app.post("/reschedule", async (req, res) => {
       return res.status(409).json({ ok:false, error: "Booking belongs to a different therapist. Please cancel & rebook with the requested therapist." });
     }
 
-    const free = await isFree(auth, found.therapist.calendarId, newStartIso, newEndIso, TIMEZONE);
+    const free = await isFree(await getAuth(), found.therapist.calendarId, newStartIso, newEndIso, TIMEZONE);
     if (!free) return res.status(409).json({ ok:false, error: `New time not available for ${found.therapist.name}.` });
 
-    const updated = await updateEventTime(auth, found.therapist.calendarId, found.event.id, {
+    const updated = await updateEventTime(await getAuth(), found.therapist.calendarId, found.event.id, {
       startIso: newStartIso, endIso: newEndIso, timeZone: TIMEZONE
     });
 
@@ -169,7 +169,7 @@ app.post("/cancel", async (req, res) => {
     if (eventId) {
       found = await findEventByIdAcross(auth, eventId);
     } else if (clientName && startIso) {
-      found = await findEventByClientAndTime(auth, { clientName, approxStartIso: startIso, windowMins: windowMins || 180 });
+      found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: startIso, windowMins: windowMins || 180 });
     } else {
       return res.status(400).json({ error: "Provide eventId or (clientName + startIso)" });
     }
@@ -180,7 +180,7 @@ app.post("/cancel", async (req, res) => {
       return res.status(409).json({ ok:false, error: "Booking belongs to a different therapist than requested." });
     }
 
-    await deleteEvent(auth, found.therapist.calendarId, found.event.id);
+    await deleteEvent(await getAuth(), found.therapist.calendarId, found.event.id);
     res.json({ ok:true, therapist: found.therapist.name, cancelledEventId: found.event.id });
   } catch (e) {
     res.status(500).json({ ok:false, error: e.message });
@@ -319,6 +319,7 @@ app.post("/nlp/slot", async (req, res) => {
   }
 });
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 
 
 

@@ -264,5 +264,63 @@ app.post("/_debug/window", async (req, res) => {
     res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
+const chrono = require("chrono-node");
+
+/** Natural language time -> ISO start/end in Europe/London (DST-safe).
+ *  Body: { whenText: "tomorrow 6pm", durationMins: 60 }
+ *  Returns: { ok, timeZone, startIso, endIso, parsedText }
+ */
+app.post("/nlp/slot", async (req, res) => {
+  try {
+    const { whenText, durationMins } = req.body || {};
+    if (!whenText || !durationMins) {
+      return res.status(400).json({ ok:false, error: "whenText and durationMins required" });
+    }
+
+    // Anchor "now" in Europe/London so 'tomorrow' resolves for the business timezone.
+    const now = new Date(new Date().toLocaleString("en-GB", { timeZone: TIMEZONE }));
+
+    // forwardDate ensures "Monday" in the past moves to the next Monday
+    const parsed = chrono.parse(whenText, now, { forwardDate: true });
+    if (!parsed.length || !parsed[0].start) {
+      return res.status(422).json({ ok:false, error: "Could not parse whenText" });
+    }
+
+    const startLocal = parsed[0].start.date();                   // Local time in Europe/London
+    const endLocal   = new Date(startLocal.getTime() + durationMins * 60000);
+
+    // Format with the correct offset for TIMEZONE at that instant (handles DST)
+    const toIsoWithTz = (d) => {
+      // Get date-time parts in the business timezone
+      const parts = Intl.DateTimeFormat("en-GB", {
+        timeZone: TIMEZONE, hour12: false,
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      }).formatToParts(d);
+      const get = (t) => parts.find(p => p.type === t)?.value.padStart(2, "0");
+      const y = get("year"), m = get("month"), da = get("day");
+      const hh = get("hour"), mm = get("minute"), ss = get("second");
+
+      // Derive numeric offset (minutes) for TIMEZONE at this date-time
+      const utcNowStr = d.toLocaleString("en-US", { timeZone: "UTC" });
+      const utcNow = new Date(utcNowStr);
+      const offsetMin = -Math.round((d - utcNow) / 60000);
+      const sign = offsetMin >= 0 ? "+" : "-";
+      const abs = Math.abs(offsetMin);
+      const offH = String(Math.floor(abs / 60)).padStart(2, "0");
+      const offM = String(abs % 60).padStart(2, "0");
+      return `${y}-${m}-${da}T${hh}:${mm}:${ss}${sign}${offH}:${offM}`;
+    };
+
+    const startIso = toIsoWithTz(startLocal);
+    const endIso   = toIsoWithTz(endLocal);
+
+    return res.json({ ok: true, timeZone: TIMEZONE, startIso, endIso, parsedText: whenText });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: String(e && e.message || e) });
+  }
+});
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
+
 

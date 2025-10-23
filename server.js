@@ -779,13 +779,15 @@ app.post("/cancel", async (req, res) => {
   const { eventId, clientName, startIso, windowMins, therapistName } = req.body || {};
 
   try {
+    const auth = await getAuth();
+
 
     let found = null;
 
     if (eventId) {
       found = await findEventByIdAcross(auth, eventId);
     } else if (clientName && startIso) {
-      found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: startIso, windowMins: windowMins || 180 });
+      found = await findEventByClientAndTime(auth, { clientName, approxStartIso: startIso, windowMins: windowMins || 180 });
     } else {
       return res.status(400).json({ error: "Provide eventId or (clientName + startIso)" });
     }
@@ -796,7 +798,7 @@ app.post("/cancel", async (req, res) => {
       return res.status(409).json({ ok:false, error: "Booking belongs to a different therapist than requested." });
     }
 
-    await deleteEvent(await getAuth(), found.therapist.calendarId, found.event.id);
+    await deleteEvent(auth, found.therapist.calendarId, found.event.id);
     res.json({ ok:true, therapist: found.therapist.name, cancelledEventId: found.event.id });
   } catch (e) {
     res.status(500).json({ ok:false, error: e.message });
@@ -1202,6 +1204,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

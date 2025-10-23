@@ -404,40 +404,7 @@ function withinBusinessHours(startIso, endIso, tz) {
 }
 
 /** Reschedule */
-app.post("/reschedule", async (req, res) => {
-  const { eventId, therapistName, clientName, oldStartIso, windowMins, newStartIso, newEndIso } = req.body || {};
-  if (!newStartIso || !newEndIso) return res.status(400).json({ error: "newStartIso and newEndIso required" });
 
-  try {
-
-    let found = null;
-
-    if (eventId) {
-      found = await findEventByIdAcross(auth, eventId);
-    } else if (clientName && oldStartIso) {
-      found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: oldStartIso, windowMins: windowMins || 180 });
-    } else {
-      return res.status(400).json({ error: "Provide eventId or (clientName + oldStartIso)" });
-    }
-
-    if (!found) return res.status(404).json({ ok:false, error: "Existing booking not found." });
-
-    if (therapistName && therapistName.toLowerCase() !== found.therapist.name.toLowerCase()) {
-      return res.status(409).json({ ok:false, error: "Booking belongs to a different therapist. Please cancel & rebook with the requested therapist." });
-    }
-
-    const free = await isFree(await getAuth(), found.therapist.calendarId, newStartIso, newEndIso, TIMEZONE);
-    if (!free) return res.status(409).json({ ok:false, error: `New time not available for ${found.therapist.name}.` });
-
-    const updated = await updateEventTime(await getAuth(), found.therapist.calendarId, found.event.id, {
-      startIso: newStartIso, endIso: newEndIso, timeZone: TIMEZONE
-    });
-
-    res.json({ ok:true, therapist: found.therapist.name, eventId: updated.id, oldStart: found.event.start, newStart: updated.start, htmlLink: updated.htmlLink });
-  } catch (e) {
-    res.status(500).json({ ok:false, error: e.message });
-  }
-});
 
 /** Cancel */
 app.post("/availability_OLD", async (req, res) => {
@@ -1235,6 +1202,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

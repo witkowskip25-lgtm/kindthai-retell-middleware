@@ -15,6 +15,38 @@ const app = express();
 app.use(express.json());
 
 const TIMEZONE = process.env.GOOGLE_TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
 
 /** Therapist -> Calendar mapping */
 const THERAPISTS = [
@@ -117,6 +149,38 @@ async function findEventByClientAndTime(auth, {
   forceCalendarId
 }) {
   const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
   const calendar = await getCalendarSafe();
   const approx = new Date(approxStartIso);
   const min = new Date(approx.getTime() - windowMins * 60 * 1000).toISOString();
@@ -384,6 +448,38 @@ app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`)
  *  ========================================= */
 app.post("/availability", verifySecret, async (req, res) => {
   const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
   const { startIso, endIso, preferredTherapist } = req.body || {};
   if (!startIso || !endIso) {
     return res.status(400).json({ ok: false, error: "startIso and endIso required" });
@@ -421,6 +517,38 @@ app.post("/book", verifySecret, async (req, res) => {
   try {
     const auth = await getAuth();
     const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
     const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
 
     // Minimum required fields
@@ -472,5 +600,6 @@ app.post("/book", verifySecret, async (req, res) => {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 

@@ -461,8 +461,12 @@ app.post("/availability", verifySecret, async (req, res) => {
   const TIMEZONE = process.env.TIMEZONE || "Europe/London";
         // Opening-hours guard (Europe/London 10:00–21:00)
     {
-      const checkIso = newStartIso || oldStartIso || startIso;
-      if (!isWithinOpeningHours(checkIso, TIMEZONE)) {
+      const checkIso =
+      (typeof newStartIso !== "undefined" && newStartIso) ||
+      (typeof oldStartIso !== "undefined" && oldStartIso) ||
+      (typeof startIso    !== "undefined" && startIso)    ||
+      null;
+      if (checkIso && !isWithinOpeningHours(checkIso, TIMEZONE)) {
         return res.json({
           ok: false,
           error: "outside_hours",
@@ -635,6 +639,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

@@ -779,7 +779,7 @@ app.post("/cancel", async (req, res) => {
   const { eventId, clientName, startIso, windowMins, therapistName } = req.body || {};
 
   try {
-    const auth = await getAuth();
+    const auth = auth;
 
 
     let found = null;
@@ -1204,6 +1204,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

@@ -29,7 +29,7 @@ app.get("/health", (_req, res) => {
 });
 
 /** Availability — returns anyFree + freeTherapists to avoid LLM misread */
-app.post("/availability", async (req, res) => {
+app.post("/availability_OLD", async (req, res) => {
   const { startIso, endIso, preferredTherapist } = req.body || {};
   if (!startIso || !endIso) {
     return res.status(400).json({ error: "startIso and endIso required" });
@@ -65,7 +65,7 @@ app.post("/availability", async (req, res) => {
 });
 
 /** Book */
-app.post("/book", async (req, res) => {
+app.post("/book_OLD", async (req, res) => {
   const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
   if (!startIso || !endIso || !clientName) return res.status(400).json({ error: "startIso, endIso, clientName required" });
   try {
@@ -382,7 +382,7 @@ app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`)
 /** =========================================
  *  NEW: /availability2 — DST-safe, async map, single auth
  *  ========================================= */
-app.post("/availability2", verifySecret, async (req, res) => {
+app.post("/availability", verifySecret, async (req, res) => {
   const TIMEZONE = process.env.TIMEZONE || "Europe/London";
   const { startIso, endIso, preferredTherapist } = req.body || {};
   if (!startIso || !endIso) {
@@ -417,7 +417,7 @@ app.post("/availability2", verifySecret, async (req, res) => {
  *  NEW: /book2 — enforce clientName + clientPhone + duration
  *  therapist order Kat -> Sara -> Lilly when not specified.
  *  ========================================= */
-app.post("/book2", verifySecret, async (req, res) => {
+app.post("/book", verifySecret, async (req, res) => {
   try {
     const auth = await getAuth();
     const TIMEZONE = process.env.TIMEZONE || "Europe/London";
@@ -472,4 +472,5 @@ app.post("/book2", verifySecret, async (req, res) => {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 

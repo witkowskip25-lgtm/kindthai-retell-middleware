@@ -238,6 +238,540 @@ function withinBusinessHours(startIso, endIso, tz) {
 }
 
 /** Reschedule */
+app.post("/availability_OLD", async (req, res) => {
+  const { startIso, endIso, preferredTherapist } = req.body || {};
+  if (!startIso || !endIso) {
+    return res.status(400).json({ error: "startIso and endIso required" });
+  }
+  try {
+
+    const list = preferredTherapist
+      ? THERAPISTS.filter(t => t.name.toLowerCase() === String(preferredTherapist).toLowerCase())
+      : THERAPISTS;
+
+    const results = [];
+    for (const t of list) {
+      try {
+        const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
+        results.push({ therapist: t.name, calendarId: t.calendarId, free, status: "ok" });
+      } catch (inner) {
+        results.push({
+          therapist: t.name,
+          calendarId: t.calendarId,
+          free: null,
+          status: "error",
+          error: String(inner.message || inner)});
+      }
+    }
+
+    const freeTherapists = results.filter(r => r.free === true).map(r => r.therapist);
+    const anyFree = freeTherapists.length > 0;
+
+    res.json({ ok: true, anyFree, freeTherapists, availability: results });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/** Book */
+app.post("/book_OLD", async (req, res) => {
+  const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
+  if (!startIso || !endIso || !clientName) return res.status(400).json({ error: "startIso, endIso, clientName required" });
+  try {
+
+    let candidates = THERAPISTS;
+    if (therapistName) {
+      const match = THERAPISTS.find(t => t.name.toLowerCase() === String(therapistName).toLowerCase());
+      candidates = match ? [match] : THERAPISTS;
+    }
+
+    let chosen = null;
+    for (const t of candidates) {
+      const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
+      if (free) { chosen = t; break; }
+    }
+    if (!chosen) return res.status(409).json({ ok:false, error: "No therapist available for that time." });
+
+    const summary = `${serviceName || "Massage"} — ${clientName}${therapistName ? " ("+chosen.name+")" : ""}`;
+    const description = `Booked by AI Receptionist
+Client: ${clientName} (${clientPhone || "-"})
+Service: ${serviceName || "Massage"} (${duration || "?"} mins)
+Therapist: ${chosen.name}`;
+
+    const event = await createEvent(await getAuth(), chosen.calendarId, {
+      summary, description, startIso, endIso, timeZone: TIMEZONE
+    });
+
+    res.json({ ok: true, therapist: chosen.name, eventId: event.id, htmlLink: event.htmlLink });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/** Helpers */
+async function findEventByIdAcross(auth, eventId) {
+  for (const t of THERAPISTS) {
+    try {
+      const ev = await getEvent(auth, t.calendarId, eventId);
+      if (ev) return { therapist: t, event: ev };
+    } catch {}
+  }
+  return null;
+}
+
+async function findEventByClientAndTime(auth, {
+  clientName,
+  approxStartIso,
+  windowMins = 180,
+  forceCalendarId
+}) {
+  const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
+  const calendar = await getCalendarSafe();
+  const approx = new Date(approxStartIso);
+  const min = new Date(approx.getTime() - windowMins * 60 * 1000).toISOString();
+  const max = new Date(approx.getTime() + windowMins * 60 * 1000).toISOString();
+
+  const lc = (s) => String(s || "").toLowerCase();
+  const target = lc(clientName);
+
+  const who = THERAPISTS || [];
+  const list = forceCalendarId
+    ? who.filter(t => t.calendarId === forceCalendarId)
+    : who;
+
+  for (const t of list) {
+    const evs = await calendar.events.list({
+      calendarId: t.calendarId,
+      timeMin: min,
+      timeMax: max,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 25,
+      q: clientName
+    });
+
+    const items = evs.data.items || [];
+    const match = items.find(e => {
+      const sum = lc(e.summary);
+      const desc = lc((e.description || ""));
+      return sum.includes(target) || desc.includes(target);
+    });
+
+    if (match) {
+      return {
+        therapist: t,
+        event: {
+          id: match.id,
+          start: match.start?.dateTime || match.start?.date,
+          end:   match.end?.dateTime   || match.end?.date
+        }
+      };
+    }
+  }
+  return null;
+}
+
+/** Reschedule */
+app.post("/reschedule", async (req, res) => {
+  const { eventId, therapistName, clientName, oldStartIso, windowMins, newStartIso, newEndIso } = req.body || {};
+  if (!newStartIso || !newEndIso) return res.status(400).json({ error: "newStartIso and newEndIso required" });
+
+  try {
+
+    let found = null;
+
+    if (eventId) {
+      found = await findEventByIdAcross(auth, eventId);
+    } else if (clientName && oldStartIso) {
+      found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: oldStartIso, windowMins: windowMins || 180 });
+    } else {
+      return res.status(400).json({ error: "Provide eventId or (clientName + oldStartIso)" });
+    }
+
+    if (!found) return res.status(404).json({ ok:false, error: "Existing booking not found." });
+
+    if (therapistName && therapistName.toLowerCase() !== found.therapist.name.toLowerCase()) {
+      return res.status(409).json({ ok:false, error: "Booking belongs to a different therapist. Please cancel & rebook with the requested therapist." });
+    }
+
+    const free = await isFree(await getAuth(), found.therapist.calendarId, newStartIso, newEndIso, TIMEZONE);
+    if (!free) return res.status(409).json({ ok:false, error: `New time not available for ${found.therapist.name}.` });
+
+    const updated = await updateEventTime(await getAuth(), found.therapist.calendarId, found.event.id, {
+      startIso: newStartIso, endIso: newEndIso, timeZone: TIMEZONE
+    });
+
+    res.json({ ok:true, therapist: found.therapist.name, eventId: updated.id, oldStart: found.event.start, newStart: updated.start, htmlLink: updated.htmlLink });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/** Cancel */
+app.post("/availability_OLD", async (req, res) => {
+  const { startIso, endIso, preferredTherapist } = req.body || {};
+  if (!startIso || !endIso) {
+    return res.status(400).json({ error: "startIso and endIso required" });
+  }
+  try {
+
+    const list = preferredTherapist
+      ? THERAPISTS.filter(t => t.name.toLowerCase() === String(preferredTherapist).toLowerCase())
+      : THERAPISTS;
+
+    const results = [];
+    for (const t of list) {
+      try {
+        const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
+        results.push({ therapist: t.name, calendarId: t.calendarId, free, status: "ok" });
+      } catch (inner) {
+        results.push({
+          therapist: t.name,
+          calendarId: t.calendarId,
+          free: null,
+          status: "error",
+          error: String(inner.message || inner)});
+      }
+    }
+
+    const freeTherapists = results.filter(r => r.free === true).map(r => r.therapist);
+    const anyFree = freeTherapists.length > 0;
+
+    res.json({ ok: true, anyFree, freeTherapists, availability: results });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/** Book */
+app.post("/book_OLD", async (req, res) => {
+  const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
+  if (!startIso || !endIso || !clientName) return res.status(400).json({ error: "startIso, endIso, clientName required" });
+  try {
+
+    let candidates = THERAPISTS;
+    if (therapistName) {
+      const match = THERAPISTS.find(t => t.name.toLowerCase() === String(therapistName).toLowerCase());
+      candidates = match ? [match] : THERAPISTS;
+    }
+
+    let chosen = null;
+    for (const t of candidates) {
+      const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
+      if (free) { chosen = t; break; }
+    }
+    if (!chosen) return res.status(409).json({ ok:false, error: "No therapist available for that time." });
+
+    const summary = `${serviceName || "Massage"} — ${clientName}${therapistName ? " ("+chosen.name+")" : ""}`;
+    const description = `Booked by AI Receptionist
+Client: ${clientName} (${clientPhone || "-"})
+Service: ${serviceName || "Massage"} (${duration || "?"} mins)
+Therapist: ${chosen.name}`;
+
+    const event = await createEvent(await getAuth(), chosen.calendarId, {
+      summary, description, startIso, endIso, timeZone: TIMEZONE
+    });
+
+    res.json({ ok: true, therapist: chosen.name, eventId: event.id, htmlLink: event.htmlLink });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/** Helpers */
+async function findEventByIdAcross(auth, eventId) {
+  for (const t of THERAPISTS) {
+    try {
+      const ev = await getEvent(auth, t.calendarId, eventId);
+      if (ev) return { therapist: t, event: ev };
+    } catch {}
+  }
+  return null;
+}
+
+async function findEventByClientAndTime(auth, {
+  clientName,
+  approxStartIso,
+  windowMins = 180,
+  forceCalendarId
+}) {
+  const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
+  const calendar = await getCalendarSafe();
+  const approx = new Date(approxStartIso);
+  const min = new Date(approx.getTime() - windowMins * 60 * 1000).toISOString();
+  const max = new Date(approx.getTime() + windowMins * 60 * 1000).toISOString();
+
+  const lc = (s) => String(s || "").toLowerCase();
+  const target = lc(clientName);
+
+  const who = THERAPISTS || [];
+  const list = forceCalendarId
+    ? who.filter(t => t.calendarId === forceCalendarId)
+    : who;
+
+  for (const t of list) {
+    const evs = await calendar.events.list({
+      calendarId: t.calendarId,
+      timeMin: min,
+      timeMax: max,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 25,
+      q: clientName
+    });
+
+    const items = evs.data.items || [];
+    const match = items.find(e => {
+      const sum = lc(e.summary);
+      const desc = lc((e.description || ""));
+      return sum.includes(target) || desc.includes(target);
+    });
+
+    if (match) {
+      return {
+        therapist: t,
+        event: {
+          id: match.id,
+          start: match.start?.dateTime || match.start?.date,
+          end:   match.end?.dateTime   || match.end?.date
+        }
+      };
+    }
+  }
+  return null;
+}
+
+/** Reschedule */
+app.post("/availability_OLD", async (req, res) => {
+  const { startIso, endIso, preferredTherapist } = req.body || {};
+  if (!startIso || !endIso) {
+    return res.status(400).json({ error: "startIso and endIso required" });
+  }
+  try {
+
+    const list = preferredTherapist
+      ? THERAPISTS.filter(t => t.name.toLowerCase() === String(preferredTherapist).toLowerCase())
+      : THERAPISTS;
+
+    const results = [];
+    for (const t of list) {
+      try {
+        const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
+        results.push({ therapist: t.name, calendarId: t.calendarId, free, status: "ok" });
+      } catch (inner) {
+        results.push({
+          therapist: t.name,
+          calendarId: t.calendarId,
+          free: null,
+          status: "error",
+          error: String(inner.message || inner)});
+      }
+    }
+
+    const freeTherapists = results.filter(r => r.free === true).map(r => r.therapist);
+    const anyFree = freeTherapists.length > 0;
+
+    res.json({ ok: true, anyFree, freeTherapists, availability: results });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/** Book */
+app.post("/book_OLD", async (req, res) => {
+  const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
+  if (!startIso || !endIso || !clientName) return res.status(400).json({ error: "startIso, endIso, clientName required" });
+  try {
+
+    let candidates = THERAPISTS;
+    if (therapistName) {
+      const match = THERAPISTS.find(t => t.name.toLowerCase() === String(therapistName).toLowerCase());
+      candidates = match ? [match] : THERAPISTS;
+    }
+
+    let chosen = null;
+    for (const t of candidates) {
+      const free = await isFree(await getAuth(), t.calendarId, startIso, endIso, TIMEZONE);
+      if (free) { chosen = t; break; }
+    }
+    if (!chosen) return res.status(409).json({ ok:false, error: "No therapist available for that time." });
+
+    const summary = `${serviceName || "Massage"} — ${clientName}${therapistName ? " ("+chosen.name+")" : ""}`;
+    const description = `Booked by AI Receptionist
+Client: ${clientName} (${clientPhone || "-"})
+Service: ${serviceName || "Massage"} (${duration || "?"} mins)
+Therapist: ${chosen.name}`;
+
+    const event = await createEvent(await getAuth(), chosen.calendarId, {
+      summary, description, startIso, endIso, timeZone: TIMEZONE
+    });
+
+    res.json({ ok: true, therapist: chosen.name, eventId: event.id, htmlLink: event.htmlLink });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: e.message });
+  }
+});
+
+/** Helpers */
+async function findEventByIdAcross(auth, eventId) {
+  for (const t of THERAPISTS) {
+    try {
+      const ev = await getEvent(auth, t.calendarId, eventId);
+      if (ev) return { therapist: t, event: ev };
+    } catch {}
+  }
+  return null;
+}
+
+async function findEventByClientAndTime(auth, {
+  clientName,
+  approxStartIso,
+  windowMins = 180,
+  forceCalendarId
+}) {
+  const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+/** Business hours guard (Europe/London, DST-safe)
+ * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
+ */
+const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
+const BUSINESS_CLOSE_HHMM = process.env.BUSINESS_CLOSE_HHMM || "21:00";
+const BUSINESS_CLOSED_DOW = (process.env.BUSINESS_CLOSED_DOW || "").split(",").map(s => s.trim()).filter(Boolean); // e.g. "Sun" or "Sun,Sat"
+
+function _hmToMinutes(hm) {
+  const [h, m] = String(hm).split(":").map(n => parseInt(n, 10));
+  return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+}
+function _tzParts(iso, tz) {
+  const d = new Date(iso);
+  const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const wd = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "short" }).format(d); // e.g. "Sun"
+  const hh = parseInt(hm.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(hm.find(p => p.type === "minute").value, 10);
+  return { minutes: hh*60 + mm, weekday: wd };
+}
+function withinBusinessHours(startIso, endIso, tz) {
+  try {
+    const s = _tzParts(startIso, tz);
+    const e = _tzParts(endIso,   tz);
+    if (BUSINESS_CLOSED_DOW.includes(s.weekday)) return false;
+    const open  = _hmToMinutes(BUSINESS_OPEN_HHMM);
+    const close = _hmToMinutes(BUSINESS_CLOSE_HHMM);
+    // Entire appointment must be within open..close (same local day window)
+    return (s.minutes >= open) && (e.minutes <= close) && (e.minutes > s.minutes);
+  } catch {
+    return false;
+  }
+}
+  const calendar = await getCalendarSafe();
+  const approx = new Date(approxStartIso);
+  const min = new Date(approx.getTime() - windowMins * 60 * 1000).toISOString();
+  const max = new Date(approx.getTime() + windowMins * 60 * 1000).toISOString();
+
+  const lc = (s) => String(s || "").toLowerCase();
+  const target = lc(clientName);
+
+  const who = THERAPISTS || [];
+  const list = forceCalendarId
+    ? who.filter(t => t.calendarId === forceCalendarId)
+    : who;
+
+  for (const t of list) {
+    const evs = await calendar.events.list({
+      calendarId: t.calendarId,
+      timeMin: min,
+      timeMax: max,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 25,
+      q: clientName
+    });
+
+    const items = evs.data.items || [];
+    const match = items.find(e => {
+      const sum = lc(e.summary);
+      const desc = lc((e.description || ""));
+      return sum.includes(target) || desc.includes(target);
+    });
+
+    if (match) {
+      return {
+        therapist: t,
+        event: {
+          id: match.id,
+          start: match.start?.dateTime || match.start?.date,
+          end:   match.end?.dateTime   || match.end?.date
+        }
+      };
+    }
+  }
+  return null;
+}
+
+/** Reschedule */
 app.post("/reschedule", async (req, res) => {
   const { eventId, therapistName, clientName, oldStartIso, windowMins, newStartIso, newEndIso } = req.body || {};
   if (!newStartIso || !newEndIso) return res.status(400).json({ error: "newStartIso and newEndIso required" });
@@ -639,6 +1173,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

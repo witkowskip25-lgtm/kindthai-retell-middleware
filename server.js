@@ -236,7 +236,7 @@ app.post("/reschedule", async (req, res) => {
     let found = null;
 
     if (eventId) {
-      found = await findEventByIdAcross(await getAuth(), eventId);
+      found = await findEventByIdAcross(auth, eventId);
     } else if (clientName && oldStartIso) {
       found = await findEventByClientAndTime(await getAuth(), { clientName, approxStartIso: oldStartIso, windowMins: windowMins || 180 });
     } else {
@@ -600,6 +600,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

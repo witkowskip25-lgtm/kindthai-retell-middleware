@@ -462,12 +462,7 @@ app.post("/book2", verifySecret, async (req, res) => {
       `Therapist: ${chosen.name}`
     ].join("\n");
 
-    const ev = await createEvent(auth, chosen.calendarId, {
-      summary,
-      description,
-      start: { dateTime: startIso, timeZone: TIMEZONE },
-      end:   { dateTime: endIso,   timeZone: TIMEZONE }
-    });
+    const ev = await createEvent(auth, chosen.calendarId, {summary, description, startIso: startIso, endIso: endIso, timeZone: TIMEZONE});
 
     const eventId = ev?.data?.id || ev?.id;
     const htmlLink = ev?.data?.htmlLink || ev?.htmlLink;
@@ -477,3 +472,4 @@ app.post("/book2", verifySecret, async (req, res) => {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+

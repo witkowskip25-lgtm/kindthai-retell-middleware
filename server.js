@@ -854,11 +854,73 @@ app.get("/", (_req, res) => res.send("KindThai Retell + Google API (service acco
 const PORT = process.env.PORT || 3000;
 
 const { google } = require("googleapis");
+/** Opening hours check using only req.body values (no route variables).
+ *  Hours (Europe/London): 10:00–21:00 (inclusive start, exclusive end).
+ *  Returns { ok:true } if inside hours or no time was supplied.
+ *  Returns { ok:false, error:"outside_hours", message: "..."} if outside hours.
+ */
+function openingHoursGuard(req, TIMEZONE) {
+  try {
+    const b = (req && req.body) ? req.body : {};
+    const iso = b.newStartIso || b.oldStartIso || b.startIso;
+    if (!iso) return { ok: true };  // no time provided yet -> don't block
+
+    const tz = TIMEZONE || "Europe/London";
+    const local = new Date(new Date(iso).toLocaleString("en-GB", { timeZone: tz }));
+    const h = local.getHours();
+
+    const openHour  = 10; // 10:00
+    const closeHour = 21; // last booking must start before 21:00
+
+    if (Number.isFinite(h) && (h < openHour || h >= closeHour)) {
+      return {
+        ok: false,
+        error: "outside_hours",
+        message: "We open at 10 AM and close at 9 PM — please choose a time within that range."
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    // Fail-open: in doubt, don't crash the route.
+    return { ok: true };
+  }
+}
 
 
 async function getCalendarSafe() {
   const auth = await getAuth();
   const { google } = require("googleapis");
+/** Opening hours check using only req.body values (no route variables).
+ *  Hours (Europe/London): 10:00–21:00 (inclusive start, exclusive end).
+ *  Returns { ok:true } if inside hours or no time was supplied.
+ *  Returns { ok:false, error:"outside_hours", message: "..."} if outside hours.
+ */
+function openingHoursGuard(req, TIMEZONE) {
+  try {
+    const b = (req && req.body) ? req.body : {};
+    const iso = b.newStartIso || b.oldStartIso || b.startIso;
+    if (!iso) return { ok: true };  // no time provided yet -> don't block
+
+    const tz = TIMEZONE || "Europe/London";
+    const local = new Date(new Date(iso).toLocaleString("en-GB", { timeZone: tz }));
+    const h = local.getHours();
+
+    const openHour  = 10; // 10:00
+    const closeHour = 21; // last booking must start before 21:00
+
+    if (Number.isFinite(h) && (h < openHour || h >= closeHour)) {
+      return {
+        ok: false,
+        error: "outside_hours",
+        message: "We open at 10 AM and close at 9 PM — please choose a time within that range."
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    // Fail-open: in doubt, don't crash the route.
+    return { ok: true };
+  }
+}
   return google.calendar({ version: "v3", auth });
 }
 /** TEMP DEBUG: raw freebusy + events in a window for a therapist */
@@ -1173,6 +1235,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

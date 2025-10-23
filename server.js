@@ -1,3 +1,14 @@
+/** Return true if startIso (interpreted in TIMEZONE) is within 10:00–21:00 local. */
+function isWithinOpeningHours(startIso, TIMEZONE) {
+  try {
+    const tz = TIMEZONE || "Europe/London";
+    const local = new Date(new Date(startIso).toLocaleString("en-GB", { timeZone: tz }));
+    const h = local.getHours();
+    return h >= 10 && h < 21; // last booking must start before 21:00
+  } catch (_e) {
+    return false;
+  }
+}
 const express = require("express");
 require("dotenv").config();
 
@@ -448,7 +459,24 @@ app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`)
  *  ========================================= */
 app.post("/availability", verifySecret, async (req, res) => {
   const TIMEZONE = process.env.TIMEZONE || "Europe/London";
-/** Business hours guard (Europe/London, DST-safe)
+        // Opening-hours guard (Europe/London 10:00–21:00)
+    {
+      const checkIso = newStartIso || oldStartIso || startIso;
+      if (!isWithinOpeningHours(checkIso, TIMEZONE)) {
+        return res.json({
+          ok: false,
+          error: "outside_hours",
+          message: "We open at 10 AM and close at 9 PM — please choose a time within that range."
+        });
+      }
+    }// Opening-hours guard (Europe/London 10:00–21:00)
+    if (!isWithinOpeningHours(startIso, TIMEZONE)) {
+      return res.json({
+        ok: false,
+        error: "outside_hours",
+        message: "We open at 10 AM and close at 9 PM — please choose a time within that range."
+      });
+    }/** Business hours guard (Europe/London, DST-safe)
  * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
  */
 const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
@@ -517,7 +545,14 @@ app.post("/book", verifySecret, async (req, res) => {
   try {
     const auth = await getAuth();
     const TIMEZONE = process.env.TIMEZONE || "Europe/London";
-/** Business hours guard (Europe/London, DST-safe)
+    // Opening-hours guard (Europe/London 10:00–21:00)
+    if (!isWithinOpeningHours(startIso, TIMEZONE)) {
+      return res.json({
+        ok: false,
+        error: "outside_hours",
+        message: "We open at 10 AM and close at 9 PM — please choose a time within that range."
+      });
+    }/** Business hours guard (Europe/London, DST-safe)
  * Open: 10:00, Close: 21:00, Closed DOW: none (change below if needed)
  */
 const BUSINESS_OPEN_HHMM  = process.env.BUSINESS_OPEN_HHMM  || "10:00";
@@ -600,6 +635,7 @@ function withinBusinessHours(startIso, endIso, tz) {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 
 
 

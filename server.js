@@ -379,3 +379,101 @@ app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`)
 
 
 
+/** =========================================
+ *  NEW: /availability2 — DST-safe, async map, single auth
+ *  ========================================= */
+app.post("/availability2", verifySecret, async (req, res) => {
+  const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+  const { startIso, endIso, preferredTherapist } = req.body || {};
+  if (!startIso || !endIso) {
+    return res.status(400).json({ ok: false, error: "startIso and endIso required" });
+  }
+  try {
+    const auth = await getAuth();
+    // Narrow list if preferredTherapist specified
+    const list = THERAPISTS.filter(t =>
+      !preferredTherapist ||
+      t.name.toLowerCase() === String(preferredTherapist).toLowerCase()
+    );
+
+    const checks = await Promise.all(list.map(async (t) => {
+      try {
+        const free = await isFree(auth, t.calendarId, startIso, endIso, TIMEZONE);
+        return { therapist: t.name, calendarId: t.calendarId, free, status: "ok" };
+      } catch (err) {
+        return { therapist: t.name, calendarId: t.calendarId, free: null, status: "error", error: String(err && err.message || err) };
+      }
+    }));
+
+    const freeTherapists = checks.filter(c => c.free === true).map(c => c.therapist);
+    const anyFree = freeTherapists.length > 0;
+    return res.json({ ok: true, anyFree, freeTherapists, availability: checks });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e && e.message || e) });
+  }
+});
+
+/** =========================================
+ *  NEW: /book2 — enforce clientName + clientPhone + duration
+ *  therapist order Kat -> Sara -> Lilly when not specified.
+ *  ========================================= */
+app.post("/book2", verifySecret, async (req, res) => {
+  try {
+    const auth = await getAuth();
+    const TIMEZONE = process.env.TIMEZONE || "Europe/London";
+    const { therapistName, startIso, endIso, clientName, clientPhone, serviceName, duration } = req.body || {};
+
+    // Minimum required fields
+    if (!startIso || !endIso) {
+      return res.status(400).json({ ok:false, error: "startIso and endIso are required" });
+    }
+    if (!clientName || !clientPhone || !duration) {
+      return res.status(400).json({ ok:false, error: "clientName, clientPhone, and duration are required" });
+    }
+
+    // therapist selection
+    function findTherapistByName(n) {
+      const low = String(n || "").trim().toLowerCase();
+      return THERAPISTS.find(x => String(x.name).trim().toLowerCase() === low);
+    }
+    let chosen = null;
+    if (therapistName) {
+      chosen = findTherapistByName(therapistName);
+      if (!chosen) return res.status(404).json({ ok:false, error: "Requested therapist not found" });
+    } else {
+      const order = ["Kat", "Sara", "Lilly"];
+      for (const n of order) {
+        const t = findTherapistByName(n);
+        if (t) { chosen = t; break; }
+      }
+    }
+    if (!chosen) return res.status(404).json({ ok:false, error: "No therapist configured" });
+
+    // check free
+    const free = await isFree(auth, chosen.calendarId, startIso, endIso, TIMEZONE);
+    if (!free) return res.status(409).json({ ok:false, error: `That time is not available for ${chosen.name}.` });
+
+    // Create event
+    const summary = `${serviceName || "Massage"} — ${clientName} (${chosen.name})`;
+    const description = [
+      `Booked by AI Receptionist`,
+      `Client: ${clientName} (${clientPhone})`,
+      `Service: ${serviceName || "Unknown"} (${duration} mins)`,
+      `Therapist: ${chosen.name}`
+    ].join("\n");
+
+    const ev = await createEvent(auth, chosen.calendarId, {
+      summary,
+      description,
+      start: { dateTime: startIso, timeZone: TIMEZONE },
+      end:   { dateTime: endIso,   timeZone: TIMEZONE }
+    });
+
+    const eventId = ev?.data?.id || ev?.id;
+    const htmlLink = ev?.data?.htmlLink || ev?.htmlLink;
+
+    return res.json({ ok:true, therapist: chosen.name, eventId, htmlLink });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: String(e && e.message || e) });
+  }
+});

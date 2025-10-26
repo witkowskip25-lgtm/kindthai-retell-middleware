@@ -1,0 +1,19 @@
+services:
+- type: web
+  name: kindthai-retell-mw
+  env: node
+  plan: free
+  branch: main
+  buildCommand: npm ci --omit=dev
+  startCommand: node server.js
+  healthCheckPath: /health
+  autoDeploy: true
+  envVars:
+    - key: NODE_ENV
+      value: production
+    - key: GOOGLE_CLIENT_EMAIL
+      sync: false      # set in Render dashboard
+    - key: GOOGLE_PRIVATE_KEY
+      sync: false      # paste multiline key in Render dashboard
+    - key: THERAPIST_CALENDARS
+      sync: false      # paste your JSON map, e.g. {"Lilly":"...","Kat":"...","Sara":"..."}

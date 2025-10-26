@@ -6,3 +6,5 @@ token.json
 *oauth*.json
 npm-debug.log*
 .DS_Store
+
+*.bak

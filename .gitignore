@@ -3,5 +3,10 @@ logs
 *.log
 .env
 .env.*
-*.json
 .DS_Store
+# optional binaries
+cloudflared.exe
+# if you want to keep SA keys out of git without blocking package.json:
+massage-salon-*.json
+*service-account*.json
+*sa-key*.json

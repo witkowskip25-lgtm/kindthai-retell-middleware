@@ -13,6 +13,8 @@ const {
 
 const app = express();
 app.use(express.json());
+const datetimeRoutes = require('./src/routes/datetime');
+app.use('/datetime', datetimeRoutes);
 
 const TIMEZONE = process.env.GOOGLE_TIMEZONE || "Europe/London";
 
@@ -472,4 +474,5 @@ app.post("/book2", verifySecret, async (req, res) => {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
+
 

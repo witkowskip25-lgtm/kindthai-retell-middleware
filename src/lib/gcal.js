@@ -178,10 +178,11 @@ async function createEvent(calendarId, { startIso, endIso, summary, description,
   return { alreadyExists: false, event: resp.data };
 }
 
-module.exports = {\n  freebusy,
+module.exports = {
   ZONE,
   getTherapistMap, listTherapists, getCalendarIdForTherapist,
-  isFree, suggestNearby, createEvent,
-  getEvent, updateEventTimes, deleteEvent
+  freebusy, isFree, suggestNearby,
+  createEvent, getEvent, updateEventTimes, deleteEvent
 };
+
 

@@ -15,7 +15,9 @@ router.post("/check", async (req, res) => {
     }
     const map = getTherapistMap();
     const names = Object.keys(map);
-    if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
+    if (names.length === 0) {
+      return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
+    }
 
     // Specific therapist requested
     if (therapist && therapist.toLowerCase() !== "any") {
@@ -47,8 +49,15 @@ router.post("/check", async (req, res) => {
     const pretty = DateTime.fromISO(startIso, { zone: ZONE }).toFormat("ccc dd LLL yyyy, t");
     return res.json({ ok: true, anyFree: false, therapistSelected: null, suggestions, startLocalPretty: pretty, therapistsTried: names });
   } catch (err) {
-    console.error("availability/check error:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    console.error("availability/check error:", err?.response?.data || err?.message || err);
+    const status = (err && err.response && err.response.status) ? err.response.status : 500;
+    const msg = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.message)
+      || (err && err.message)
+      || "Server error";
+    const code = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.status) || undefined;
+    // include raw Google payload when present so we can diagnose quickly
+    const raw = (err && err.response && err.response.data) ? err.response.data : undefined;
+    return res.status(status).json({ ok: false, error: msg, code, raw });
   }
 });
 

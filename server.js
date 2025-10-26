@@ -494,3 +494,6 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'kindthai-retell-middleware', uptime: process.uptime() });
 });
 
+
+const debugRoutes = require('./src/routes/debug');
+app.use('/debug', debugRoutes);

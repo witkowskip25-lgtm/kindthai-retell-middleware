@@ -145,7 +145,7 @@ async function createEvent(calendarId, { startIso, endIso, summary, description,
         calendar.events.list({
           calendarId,
           timeMin: startIso, timeMax: endIso,
-          privateExtendedProperty: [`requestId=${requestId}`],
+      privateExtendedProperty: [String(key) + "=" + String(value)],
           singleEvents: true, maxResults: 1,
         }),
         8000, "calendar.events.list"
@@ -206,7 +206,7 @@ async function searchByPrivateProp(calendarId, timeMin, timeMax, key, value, max
       orderBy: "startTime",
       timeMin,
       timeMax,
-      privateExtendedProperty: [\\=\\],
+      privateExtendedProperty: [String(key) + "=" + String(value)],
       maxResults
     }),
     8000,
@@ -220,6 +220,7 @@ module.exports = {
   freebusy, isFree, suggestNearby, searchEvents,
   createEvent, getEvent, updateEventTimes, deleteEvent
 };
+
 
 
 

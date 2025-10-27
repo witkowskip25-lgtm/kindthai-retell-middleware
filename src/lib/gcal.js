@@ -221,14 +221,5 @@ module.exports = {
   createEvent, getEvent, updateEventTimes, deleteEvent
 };
 
-
-
-
-
-
-
-
-
-
-
+module.exports.searchByPrivateProp = searchByPrivateProp;
 

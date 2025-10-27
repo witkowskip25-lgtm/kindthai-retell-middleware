@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { DateTime } = require("luxon");
 const {
   ZONE,
   getTherapistMap, getCalendarIdForTherapist,
@@ -7,14 +8,74 @@ const {
   getEvent, updateEventTimes, deleteEvent,
   searchEvents, searchByPrivateProp
 } = require("../lib/gcal");
-const { DateTime } = require("luxon");
+const { ROSTER, MAX_ROOMS } = require("../lib/salonPolicy");
+
+/** Map alias + add Rose from env */
+function effectiveTherapistMap(raw) {
+  const map = { ...raw };
+  if (map["Sara"] && !map["Nina"]) {
+    map["Nina"] = map["Sara"];
+    delete map["Sara"];
+  }
+  const roseCal = process.env.ROSE_CAL_ID;
+  if (roseCal) map["Rose"] = roseCal;
+  return map;
+}
+
+/** Count busy therapists in window (for capacity gate). */
+async function countSalonLoad(calIds, startIso, endIso) {
+  let busy = 0;
+  for (const id of calIds) {
+    const { anyFree } = await isFree(id, startIso, endIso);
+    if (!anyFree) busy++;
+  }
+  return busy;
+}
+
+/** Nearby suggestions respecting roster & capacity */
+async function suggestTwo({ allowedNames, map, startIso, endIso }) {
+  const baseStart = DateTime.fromISO(startIso, { zone: ZONE });
+  const baseEnd   = DateTime.fromISO(endIso,   { zone: ZONE });
+  const deltas = [-30, 30, -60, 60];
+  const out = [];
+
+  for (const d of deltas) {
+    const s = baseStart.plus({ minutes: d });
+    const e = baseEnd.plus({ minutes: d });
+
+    const wd = s.weekday;
+    const rosterForShift = ROSTER[wd] || allowedNames;
+    const allowedCalIds = rosterForShift.map(n => map[n]).filter(Boolean);
+    if (allowedCalIds.length === 0) continue;
+
+    const load = await countSalonLoad(allowedCalIds, s.toISO(), e.toISO());
+    if (load >= MAX_ROOMS) continue;
+
+    let ok = false;
+    for (const name of rosterForShift) {
+      const id = map[name];
+      if (!id) continue;
+      const { anyFree } = await isFree(id, s.toISO(), e.toISO());
+      if (anyFree) { ok = true; break; }
+    }
+    if (!ok) continue;
+
+    out.push({
+      startIso: s.toISO(),
+      endIso: e.toISO(),
+      startLocalPretty: s.toFormat("ccc dd LLL yyyy, t")
+    });
+    if (out.length >= 2) break;
+  }
+  return out;
+}
 
 function nameForCalendarId(calId) {
   const map = getTherapistMap();
   return Object.keys(map).find(n => map[n] === calId) || null;
 }
 
-// POST /booking/create
+// POST /booking/create  (WITH ROSTER + CAPACITY BACKSTOP)
 router.post("/create", async (req, res) => {
   try {
     const {
@@ -29,27 +90,79 @@ router.post("/create", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing required fields" });
     }
 
-    const map = getTherapistMap();
+    const map = effectiveTherapistMap(getTherapistMap());
     const names = Object.keys(map);
     if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
 
-    let selectedName = therapist && therapist.toLowerCase() !== "any" ? therapist : null;
-    let calId = selectedName ? getCalendarIdForTherapist(selectedName) : null;
-    if (selectedName && !calId) return res.status(404).json({ ok: false, error: `Unknown therapist '${selectedName}'` });
+    const start = DateTime.fromISO(startIso, { zone: ZONE });
+    const end   = DateTime.fromISO(endIso,   { zone: ZONE });
+    if (!start.isValid || !end.isValid) {
+      return res.status(400).json({ ok: false, error: "Invalid ISO times" });
+    }
 
-    if (!calId) {
-      for (const name of names) {
+    // Roster + capacity for the requested start date
+    const weekday = start.weekday; // 1=Mon..7=Sun
+    const rosterForDay = ROSTER[weekday] || names;
+    const allowedNames = rosterForDay.filter(n => !!map[n]);
+    const allowedCalIds = allowedNames.map(n => map[n]);
+
+    // Capacity gate (2 rooms total)
+    const loadNow = await countSalonLoad(allowedCalIds, start.toISO(), end.toISO());
+    if (loadNow >= MAX_ROOMS) {
+      const suggestions = await suggestTwo({ allowedNames, map, startIso, endIso });
+      return res.status(409).json({
+        ok: false,
+        error: "capacity_reached",
+        policy: { rosterForDay: allowedNames, maxRooms: MAX_ROOMS, loadNow },
+        suggestions
+      });
+    }
+
+    // Therapist selection honoring roster
+    let selectedName = therapist && therapist.toLowerCase() !== "any" ? therapist : null;
+    let calId = selectedName ? map[selectedName] : null;
+
+    if (selectedName) {
+      if (!allowedNames.includes(selectedName)) {
+        const suggestions = await suggestTwo({ allowedNames, map, startIso, endIso });
+        return res.status(409).json({
+          ok: false,
+          error: "therapist_not_scheduled_today",
+          therapistRequested: selectedName,
+          policy: { rosterForDay: allowedNames, maxRooms: MAX_ROOMS, loadNow },
+          suggestions
+        });
+      }
+      const { anyFree } = await isFree(calId, startIso, endIso);
+      if (!anyFree) {
+        const suggestions = await suggestTwo({ allowedNames, map, startIso, endIso });
+        return res.status(409).json({
+          ok: false,
+          error: `time_not_available_for_${selectedName}`,
+          policy: { rosterForDay: allowedNames, maxRooms: MAX_ROOMS, loadNow },
+          suggestions
+        });
+      }
+    } else {
+      // auto-pick first free therapist within roster
+      for (const name of allowedNames) {
         const id = map[name];
+        if (!id) continue;
         const { anyFree } = await isFree(id, startIso, endIso);
         if (anyFree) { selectedName = name; calId = id; break; }
       }
-      if (!calId) return res.status(409).json({ ok: false, error: "Time not available for any therapist" });
-    } else {
-      const { anyFree } = await isFree(calId, startIso, endIso);
-      if (!anyFree) return res.status(409).json({ ok: false, error: `Time not available for therapist '${selectedName}'` });
+      if (!calId) {
+        const suggestions = await suggestTwo({ allowedNames, map, startIso, endIso });
+        return res.status(409).json({
+          ok: false,
+          error: "time_not_available_for_any_rostered_therapist",
+          policy: { rosterForDay: allowedNames, maxRooms: MAX_ROOMS, loadNow },
+          suggestions
+        });
+      }
     }
 
-    const pretty = DateTime.fromISO(startIso, { zone: ZONE }).toFormat("ccc dd LLL yyyy, t");
+    const pretty = start.toFormat("ccc dd LLL yyyy, t");
     const summary = `${serviceName} — ${clientName}`;
     const description = [
       `Client: ${clientName}`,
@@ -57,7 +170,7 @@ router.post("/create", async (req, res) => {
       `Service: ${serviceName} (${duration || "?"} min)`,
       `Therapist: ${selectedName}`,
       `Booked via Kind Thai Middleware`,
-    ].join("\n");
+    ].join("\\n");
 
     const result = await createEvent(calId, {
       startIso, endIso, summary, description, requestId,
@@ -65,7 +178,7 @@ router.post("/create", async (req, res) => {
         therapist: selectedName,
         calendarId: calId,
         clientPhone,
-        clientPhoneDigits: (clientPhone || "").replace(/\D/g,"")
+        clientPhoneDigits: (clientPhone || "").replace(/\\D/g,"")
       }
     });
 
@@ -88,6 +201,8 @@ router.post("/create", async (req, res) => {
   }
 });
 
+// === Existing routes (unchanged) ===
+
 // POST /booking/reschedule
 router.post("/reschedule", async (req, res) => {
   try {
@@ -96,12 +211,12 @@ router.post("/reschedule", async (req, res) => {
       return res.status(400).json({ ok: false, error: "eventId, currentCalendarId, newStartIso, newEndIso are required" });
     }
 
-    const map = getTherapistMap();
+    const map = effectiveTherapistMap(getTherapistMap());
     const names = Object.keys(map);
     if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
 
     let selectedName = (newTherapist && newTherapist.toLowerCase() !== "any") ? newTherapist : null;
-    let targetCalId = selectedName ? getCalendarIdForTherapist(selectedName) : null;
+    let targetCalId = selectedName ? map[selectedName] : null;
 
     if (selectedName && !targetCalId) {
       return res.status(404).json({ ok: false, error: `Unknown therapist '${selectedName}'` });
@@ -141,7 +256,7 @@ router.post("/reschedule", async (req, res) => {
 
     const original = await getEvent(currentCalendarId, eventId);
     const summary = original.summary || "Appointment";
-    const description = (original.description || "") + "\n[Rescheduled]";
+    const description = (original.description || "") + "\\n[Rescheduled]";
     const created = await createEvent(targetCalId, {
       startIso: newStartIso,
       endIso: newEndIso,
@@ -194,9 +309,6 @@ router.post("/cancel", async (req, res) => {
 });
 
 // POST /booking/find
-// Body: { clientPhone?, onDateIso? (YYYY-MM-DD), startIso?, endIso?, timeZone? }
-// - If clientPhone omitted, falls back to header 'x-retell-number'.
-// - Provide onDateIso OR (startIso & endIso)
 router.post("/find", async (req, res) => {
   try {
     const hdrPhone = (req.headers["x-retell-number"] || "").trim();
@@ -217,7 +329,7 @@ router.post("/find", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Provide onDateIso OR startIso & endIso" });
     }
 
-    const map = getTherapistMap();
+    const map = effectiveTherapistMap(getTherapistMap());
     const names = Object.keys(map);
     if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
 
@@ -225,15 +337,14 @@ router.post("/find", async (req, res) => {
     for (const name of names) {
       const calId = map[name];
       try {
-        // 1) exact private props (full phone), 2) digits, 3) text q, 4) last 6 digits
         let list = await searchByPrivateProp(calId, fromIso, toIso, "clientPhone", phone, 25);
         if (list.length === 0) {
-          const digits = phone.replace(/\D/g,"");
+          const digits = phone.replace(/\\D/g,"");
           if (digits) list = await searchByPrivateProp(calId, fromIso, toIso, "clientPhoneDigits", digits, 25);
         }
         if (list.length === 0) list = await searchEvents(calId, fromIso, toIso, phone, 25);
-        if (list.length === 0 && phone.replace(/\D/g,"").length >= 6) {
-          const last6 = phone.replace(/\D/g,"").slice(-6);
+        if (list.length === 0 && phone.replace(/\\D/g,"").length >= 6) {
+          const last6 = phone.replace(/\\D/g,"").slice(-6);
           list = await searchEvents(calId, fromIso, toIso, last6, 25);
         }
 

@@ -203,10 +203,43 @@ router.post("/create", async (req, res) => {
 
 // === Existing routes (unchanged) ===
 
-// POST /booking/reschedule
+/** Utility: safe stringify for logs */
+function safeJson(obj) {
+  try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+}
+
+/** Try to recover the latest event for a phone across all calendars */
+async function recoverLatestEventForPhone(map, phone, fromIso, toIso) {
+  if (!phone) return null;
+  const digits = (phone || "").replace(/\D/g, "");
+  if (!digits) return null;
+  const start = fromIso ? DateTime.fromISO(fromIso, { zone: ZONE }) : DateTime.now().minus({ days: 14 }).setZone(ZONE);
+  const end   = toIso   ? DateTime.fromISO(toIso,   { zone: ZONE }) : DateTime.now().plus({ days: 2 }).setZone(ZONE);
+  const results = [];
+
+  for (const [name, calId] of Object.entries(map)) {
+    try {
+      let list = await searchByPrivateProp(calId, start.toISO(), end.toISO(), "clientPhoneDigits", digits, 10);
+      if (!list || list.length === 0) {
+        list = await searchByPrivateProp(calId, start.toISO(), end.toISO(), "clientPhone", phone, 10);
+      }
+      for (const ev of (list || [])) {
+        const s = ev.start?.dateTime || ev.start?.date || ev.updated || ev.created;
+        if (s) results.push({ name, calId, ev, sortKey: Date.parse(s) || 0 });
+      }
+    } catch (e) {
+      // ignore per-calendar errors during recovery
+    }
+  }
+
+  results.sort((a, b) => b.sortKey - a.sortKey);
+  return results[0] || null;
+}
+
+// POST /booking/reschedule (with preflight + recovery)
 router.post("/reschedule", async (req, res) => {
   try {
-    const { eventId, currentCalendarId, newStartIso, newEndIso, newTherapist, requestId } = req.body || {};
+    const { eventId, currentCalendarId, newStartIso, newEndIso, newTherapist, requestId, clientPhone } = req.body || {};
     if (!eventId || !currentCalendarId || !newStartIso || !newEndIso) {
       return res.status(400).json({ ok: false, error: "eventId, currentCalendarId, newStartIso, newEndIso are required" });
     }
@@ -215,6 +248,27 @@ router.post("/reschedule", async (req, res) => {
     const names = Object.keys(map);
     if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
 
+    // --- Preflight: does the event still exist where the client says it is?
+    let evExists = true;
+    try { await getEvent(currentCalendarId, eventId); }
+    catch (e) {
+      const code = e?.response?.status || e?.code;
+      if (code === 404) evExists = false; else throw e;
+    }
+
+    // --- If not found, attempt recovery using phone (latest event for that phone)
+    let srcCal = currentCalendarId;
+    let srcEventId = eventId;
+    if (!evExists) {
+      const recovered = await recoverLatestEventForPhone(map, clientPhone, null, null);
+      if (!recovered) {
+        return res.status(404).json({ ok: false, error: "event_not_found", detail: "The original event no longer exists and recovery by phone failed." });
+      }
+      srcCal = recovered.calId;
+      srcEventId = recovered.ev.id;
+    }
+
+    // --- Choose target calendar (keep same unless newTherapist specified)
     let selectedName = (newTherapist && newTherapist.toLowerCase() !== "any") ? newTherapist : null;
     let targetCalId = selectedName ? map[selectedName] : null;
 
@@ -223,40 +277,33 @@ router.post("/reschedule", async (req, res) => {
     }
 
     if (!targetCalId) {
-      const keepSame = !newTherapist || newTherapist.toLowerCase() === "any";
-      if (keepSame) {
-        selectedName = Object.keys(map).find(n => map[n] === currentCalendarId) || null;
-        targetCalId = currentCalendarId;
-      } else {
-        for (const name of names) {
-          const id = map[name];
-          const { anyFree } = await isFree(id, newStartIso, newEndIso);
-          if (anyFree) { selectedName = name; targetCalId = id; break; }
-        }
-      }
+      // Keep same therapist/calendar
+      selectedName = Object.keys(map).find(n => map[n] === srcCal) || null;
+      targetCalId = srcCal;
     }
 
-    if (!targetCalId) return res.status(409).json({ ok: false, error: "Time not available for any therapist" });
-
+    // --- Ensure target slot is actually free
     const { anyFree } = await isFree(targetCalId, newStartIso, newEndIso);
     if (!anyFree) return res.status(409).json({ ok: false, error: `Time not available for therapist '${selectedName}'` });
 
-    if (targetCalId === currentCalendarId) {
-      const updated = await updateEventTimes(currentCalendarId, eventId, newStartIso, newEndIso);
+    if (targetCalId === srcCal) {
+      // Simple time move
+      const updated = await updateEventTimes(srcCal, srcEventId, newStartIso, newEndIso);
       return res.json({
         ok: true,
         movedCalendar: false,
         therapist: selectedName,
-        calendarId: currentCalendarId,
+        calendarId: srcCal,
         eventId: updated.id,
         htmlLink: updated.htmlLink,
         startIso: newStartIso, endIso: newEndIso
       });
     }
 
-    const original = await getEvent(currentCalendarId, eventId);
+    // Cross-calendar move (copy then delete)
+    const original = await getEvent(srcCal, srcEventId);
     const summary = original.summary || "Appointment";
-    const description = (original.description || "") + "\\n[Rescheduled]";
+    const description = (original.description || "") + "\n[Rescheduled]";
     const created = await createEvent(targetCalId, {
       startIso: newStartIso,
       endIso: newEndIso,
@@ -270,7 +317,7 @@ router.post("/reschedule", async (req, res) => {
         clientPhoneDigits: original?.extendedProperties?.private?.clientPhoneDigits
       }
     });
-    await deleteEvent(currentCalendarId, eventId);
+    await deleteEvent(srcCal, srcEventId);
 
     return res.json({
       ok: true,
@@ -282,7 +329,7 @@ router.post("/reschedule", async (req, res) => {
       startIso: newStartIso, endIso: newEndIso
     });
   } catch (err) {
-    console.error("booking/reschedule error:", err?.response?.data || err?.message || err);
+    console.error("booking/reschedule error:", safeJson(err?.response?.data || { message: err?.message, stack: err?.stack }));
     const status = err?.response?.status || 500;
     const msg = err?.response?.data?.error?.message || err?.message || "Server error";
     const code = err?.response?.data?.error?.status;
@@ -290,8 +337,9 @@ router.post("/reschedule", async (req, res) => {
   }
 });
 
+
 // POST /booking/cancel
-router.post("/cancel", async (req, res) => {
+router.post("/cancel", async (req, res) => {, async (req, res) => {
   try {
     const { eventId, calendarId } = req.body || {};
     if (!eventId || !calendarId) {
@@ -380,3 +428,4 @@ router.post("/find", async (req, res) => {
 });
 
 module.exports = router;
+

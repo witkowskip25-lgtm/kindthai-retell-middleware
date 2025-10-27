@@ -178,12 +178,32 @@ async function createEvent(calendarId, { startIso, endIso, summary, description,
   return { alreadyExists: false, event: resp.data };
 }
 
+async function searchEvents(calendarId, timeMin, timeMax, query, maxResults = 10) {
+  // Uses Calendar API: events.list with 'q' to match summary/description/body.
+  // Returns an array of event items (singleEvents=true, orderBy=startTime).
+  const calendar = getCalendar();
+  const resp = await pTimeout(
+    calendar.events.list({
+      calendarId,
+      singleEvents: true,
+      orderBy: "startTime",
+      timeMin,
+      timeMax,
+      q: query,
+      maxResults
+    }),
+    8000,
+    "calendar.events.list (search)"
+  );
+  return resp.data.items || [];
+}
 module.exports = {
   ZONE,
   getTherapistMap, listTherapists, getCalendarIdForTherapist,
   freebusy, isFree, suggestNearby, searchEvents,
   createEvent, getEvent, updateEventTimes, deleteEvent
 };
+
 
 
 

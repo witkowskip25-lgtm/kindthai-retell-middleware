@@ -197,12 +197,31 @@ async function searchEvents(calendarId, timeMin, timeMax, query, maxResults = 10
   );
   return resp.data.items || [];
 }
+async function searchByPrivateProp(calendarId, timeMin, timeMax, key, value, maxResults = 25) {
+  const calendar = getCalendar();
+  const resp = await pTimeout(
+    calendar.events.list({
+      calendarId,
+      singleEvents: true,
+      orderBy: "startTime",
+      timeMin,
+      timeMax,
+      privateExtendedProperty: [\\=\\],
+      maxResults
+    }),
+    8000,
+    "calendar.events.list (privateProp)"
+  );
+  return resp.data.items || [];
+}
 module.exports = {
   ZONE,
   getTherapistMap, listTherapists, getCalendarIdForTherapist,
   freebusy, isFree, suggestNearby, searchEvents,
   createEvent, getEvent, updateEventTimes, deleteEvent
 };
+
+
 
 
 

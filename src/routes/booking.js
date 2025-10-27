@@ -3,9 +3,16 @@ const router = express.Router();
 const {
   ZONE,
   getTherapistMap, getCalendarIdForTherapist,
-  isFree, createEvent, getEvent, updateEventTimes, deleteEvent
+  isFree, suggestNearby, createEvent,
+  getEvent, updateEventTimes, deleteEvent, searchEvents
 } = require("../lib/gcal");
 const { DateTime } = require("luxon");
+
+// Utility: reverse map calendarId -> therapist name
+function nameForCalendarId(calId) {
+  const map = getTherapistMap();
+  return Object.keys(map).find(n => map[n] === calId) || null;
+}
 
 // POST /booking/create
 router.post("/create", async (req, res) => {
@@ -50,11 +57,11 @@ router.post("/create", async (req, res) => {
       `Service: ${serviceName} (${duration || "?"} min)`,
       `Therapist: ${selectedName}`,
       `Booked via Kind Thai Middleware`,
-    ].filter(Boolean).join("\\n");
+    ].join("\\n");
 
     const result = await createEvent(calId, {
       startIso, endIso, summary, description, requestId,
-      privateProps: { therapist: selectedName, calendarId: calId }
+      privateProps: { therapist: selectedName, calendarId: calId, clientPhone }
     });
 
     return res.json({
@@ -69,17 +76,14 @@ router.post("/create", async (req, res) => {
     });
   } catch (err) {
     console.error("booking/create error:", err?.response?.data || err?.message || err);
-    const status = (err && err.response && err.response.status) ? err.response.status : 500;
-    const msg = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.message)
-      || (err && err.message)
-      || "Server error";
-    const code = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.status) || undefined;
+    const status = err?.response?.status || 500;
+    const msg = err?.response?.data?.error?.message || err?.message || "Server error";
+    const code = err?.response?.data?.error?.status;
     return res.status(status).json({ ok: false, error: msg, code });
   }
 });
 
 // POST /booking/reschedule
-// Body: { eventId, currentCalendarId, newStartIso, newEndIso, newTherapist? ('any' | name), requestId? }
 router.post("/reschedule", async (req, res) => {
   try {
     const { eventId, currentCalendarId, newStartIso, newEndIso, newTherapist, requestId } = req.body || {};
@@ -91,7 +95,6 @@ router.post("/reschedule", async (req, res) => {
     const names = Object.keys(map);
     if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
 
-    // Decide target therapist/calendar
     let selectedName = (newTherapist && newTherapist.toLowerCase() !== "any") ? newTherapist : null;
     let targetCalId = selectedName ? getCalendarIdForTherapist(selectedName) : null;
 
@@ -100,7 +103,6 @@ router.post("/reschedule", async (req, res) => {
     }
 
     if (!targetCalId) {
-      // If therapist not specified, keep same calendar; else try any
       const keepSame = !newTherapist || newTherapist.toLowerCase() === "any";
       if (keepSame) {
         selectedName = Object.keys(map).find(n => map[n] === currentCalendarId) || null;
@@ -116,11 +118,9 @@ router.post("/reschedule", async (req, res) => {
 
     if (!targetCalId) return res.status(409).json({ ok: false, error: "Time not available for any therapist" });
 
-    // Ensure time free on target
     const { anyFree } = await isFree(targetCalId, newStartIso, newEndIso);
     if (!anyFree) return res.status(409).json({ ok: false, error: `Time not available for therapist '${selectedName}'` });
 
-    // If staying on same calendar -> patch
     if (targetCalId === currentCalendarId) {
       const updated = await updateEventTimes(currentCalendarId, eventId, newStartIso, newEndIso);
       return res.json({
@@ -134,17 +134,16 @@ router.post("/reschedule", async (req, res) => {
       });
     }
 
-    // Moving across calendars: copy then delete old
     const original = await getEvent(currentCalendarId, eventId);
     const summary = original.summary || "Appointment";
-    const description = (original.description || "") + "\n[Rescheduled]";
+    const description = (original.description || "") + "\\n[Rescheduled]";
     const created = await createEvent(targetCalId, {
       startIso: newStartIso,
       endIso: newEndIso,
       summary,
       description,
       requestId,
-      privateProps: { therapist: selectedName, calendarId: targetCalId }
+      privateProps: { therapist: selectedName, calendarId: targetCalId, clientPhone: original?.extendedProperties?.private?.clientPhone }
     });
     await deleteEvent(currentCalendarId, eventId);
 
@@ -159,17 +158,14 @@ router.post("/reschedule", async (req, res) => {
     });
   } catch (err) {
     console.error("booking/reschedule error:", err?.response?.data || err?.message || err);
-    const status = (err && err.response && err.response.status) ? err.response.status : 500;
-    const msg = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.message)
-      || (err && err.message)
-      || "Server error";
-    const code = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.status) || undefined;
+    const status = err?.response?.status || 500;
+    const msg = err?.response?.data?.error?.message || err?.message || "Server error";
+    const code = err?.response?.data?.error?.status;
     return res.status(status).json({ ok: false, error: msg, code });
   }
 });
 
 // POST /booking/cancel
-// Body: { eventId, calendarId, reason? }
 router.post("/cancel", async (req, res) => {
   try {
     const { eventId, calendarId } = req.body || {};
@@ -180,11 +176,93 @@ router.post("/cancel", async (req, res) => {
     return res.json({ ok: true, eventId, calendarId });
   } catch (err) {
     console.error("booking/cancel error:", err?.response?.data || err?.message || err);
-    const status = (err && err.response && err.response.status) ? err.response.status : 500;
-    const msg = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.message)
-      || (err && err.message)
-      || "Server error";
-    const code = (err && err.response && err.response.data && err.response.data.error && err.response.data.error.status) || undefined;
+    const status = err?.response?.status || 500;
+    const msg = err?.response?.data?.error?.message || err?.message || "Server error";
+    const code = err?.response?.data?.error?.status;
+    return res.status(status).json({ ok: false, error: msg, code });
+  }
+});
+
+// POST /booking/find
+// Body: { clientPhone?, onDateIso? (YYYY-MM-DD), startIso?, endIso?, timeZone? }
+// - If clientPhone omitted, falls back to header 'x-retell-number'.
+// - You MUST provide either onDateIso OR (startIso & endIso).
+router.post("/find", async (req, res) => {
+  try {
+    const hdrPhone = (req.headers["x-retell-number"] || "").trim();
+    const {
+      clientPhone,
+      onDateIso,
+      startIso,
+      endIso,
+      timeZone
+    } = req.body || {};
+
+    const phone = (clientPhone || hdrPhone || "").trim();
+    if (!phone) return res.status(400).json({ ok: false, error: "clientPhone required (or provide in x-retell-number header)" });
+
+    const tz = timeZone || ZONE;
+    let fromIso, toIso;
+
+    if (onDateIso && (!startIso && !endIso)) {
+      const day = DateTime.fromISO(onDateIso, { zone: tz });
+      if (!day.isValid) return res.status(400).json({ ok: false, error: "Invalid onDateIso" });
+      fromIso = day.startOf("day").toISO();
+      toIso   = day.endOf("day").toISO();
+    } else if (startIso && endIso) {
+      fromIso = DateTime.fromISO(startIso, { zone: tz }).toISO();
+      toIso   = DateTime.fromISO(endIso,   { zone: tz }).toISO();
+    } else {
+      return res.status(400).json({ ok: false, error: "Provide onDateIso OR startIso & endIso" });
+    }
+
+    const map = getTherapistMap();
+    const names = Object.keys(map);
+    if (names.length === 0) return res.status(500).json({ ok: false, error: "No therapist calendars configured" });
+
+    const matches = [];
+    for (const name of names) {
+      const calId = map[name];
+      try {
+        // Search by full phone; if nothing, also try last 6 digits
+        const items = await searchEvents(calId, fromIso, toIso, phone, 10);
+        let list = items;
+        if (list.length === 0 && phone.replace(/\D/g,"").length >= 6) {
+          const last6 = phone.replace(/\D/g,"").slice(-6);
+          list = await searchEvents(calId, fromIso, toIso, last6, 10);
+        }
+        for (const ev of list) {
+          const s = ev.start?.dateTime || (ev.start?.date ? DateTime.fromISO(ev.start.date, {zone: tz}).startOf("day").toISO() : null);
+          const e = ev.end?.dateTime   || (ev.end?.date   ? DateTime.fromISO(ev.end.date,   {zone: tz}).endOf("day").toISO()   : null);
+          matches.push({
+            therapist: name,
+            calendarId: calId,
+            eventId: ev.id,
+            htmlLink: ev.htmlLink,
+            summary: ev.summary,
+            status: ev.status,
+            startIso: s,
+            endIso: e,
+            startLocalPretty: s ? DateTime.fromISO(s, { zone: tz }).toFormat("ccc dd LLL yyyy, t") : null,
+            privateProps: ev.extendedProperties?.private || {}
+          });
+        }
+      } catch (err) {
+        matches.push({ therapist: name, calendarId: calId, error: err?.response?.data?.error?.message || err?.message || "Search error" });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      phoneUsed: phone,
+      window: { startIso: fromIso, endIso: toIso, zone: tz },
+      matches
+    });
+  } catch (err) {
+    console.error("booking/find error:", err?.response?.data || err?.message || err);
+    const status = err?.response?.status || 500;
+    const msg = err?.response?.data?.error?.message || err?.message || "Server error";
+    const code = err?.response?.data?.error?.status;
     return res.status(status).json({ ok: false, error: msg, code });
   }
 });

@@ -16,6 +16,7 @@ const {
 } = require("./gcal");
 
 const app = express();
+
 app.use(bookingFindV2);
 
 app.use(express.json());
@@ -509,6 +510,7 @@ const debugRoutes = require('./src/routes/debug');
 
 const bookingFindV2 = require('./routes/booking_find_v2');
 app.use('/debug', debugRoutes);
+
 
 
 

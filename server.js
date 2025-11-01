@@ -16,6 +16,7 @@ const {
   searchEvents
 } = require("./gcal");
 
+const bookingFindV2 = require('./routes/booking_find_v2');
 const app = express();
 
 
@@ -513,7 +514,6 @@ app.get('/health', (_req, res) => {
 
 
 const debugRoutes = require('./src/routes/debug');
-const bookingFindV2 = require('./routes/booking_find_v2');
 
 
 app.use('/debug', debugRoutes);

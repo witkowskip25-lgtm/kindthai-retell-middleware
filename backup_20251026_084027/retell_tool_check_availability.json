@@ -1,0 +1,53 @@
+{
+  "name": "check_availability",
+  "description": "Check if a given ISO8601 start/end is free for a specific therapist or any therapist.",
+  "type": "http",
+  "request": {
+    "body_template": {
+      "startIso": "{{startIso}}",
+      "endIso": "{{endIso}}",
+      "therapist": "{{therapist}}"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "url": "http://localhost:3000/availability/check",
+    "method": "POST"
+  },
+  "input_schema": {
+    "required": [
+      "startIso",
+      "endIso"
+    ],
+    "properties": {
+      "startIso": {
+        "description": "Start time, ISO8601 with timezone (e.g. 2025-10-27T16:00:00+00:00)",
+        "type": "string"
+      },
+      "endIso": {
+        "description": "End time, ISO8601 with timezone",
+        "type": "string"
+      },
+      "therapist": {
+        "enum": [
+          "any",
+          "Lilly",
+          "Kat",
+          "Sara"
+        ],
+        "description": "Which therapist to check (or 'any')",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "response_mapping": {
+    "startLocalPretty": "$.startLocalPretty",
+    "ok": "$.ok",
+    "therapistSelected": "$.therapistSelected",
+    "anyFree": "$.anyFree",
+    "calendarId": "$.calendarId",
+    "suggestions": "$.suggestions"
+  },
+  "timeout_ms": 15000
+}

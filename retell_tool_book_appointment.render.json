@@ -1,0 +1,87 @@
+{
+  "name": "book_appointment",
+  "description": "Create a booking for a given time window and client into the chosen therapist's calendar.",
+  "type": "http",
+  "request": {
+    "url": "https://kindthai-retell-mw.onrender.com/booking/create",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_template": {
+      "clientName": "{{clientName}}",
+      "serviceName": "{{serviceName}}",
+      "endIso": "{{endIso}}",
+      "requestId": "retell-{{requestId}}",
+      "therapist": "{{therapist}}",
+      "clientPhone": "{{clientPhone}}",
+      "startIso": "{{startIso}}",
+      "duration": "{{duration}}"
+    }
+  },
+  "input_schema": {
+    "properties": {
+      "clientName": {
+        "description": "Customer full name",
+        "type": "string"
+      },
+      "serviceName": {
+        "description": "Service label (e.g. 'Thai Massage 60')",
+        "type": "string"
+      },
+      "endIso": {
+        "description": "End time, ISO8601 with timezone",
+        "type": "string"
+      },
+      "requestId": {
+        "description": "Idempotency key (optional)",
+        "type": "string"
+      },
+      "therapist": {
+        "description": "Therapist or 'any' to auto-pick",
+        "type": "string",
+        "enum": [
+          "any",
+          "Lilly",
+          "Kat",
+          "Sara"
+        ]
+      },
+      "clientPhone": {
+        "description": "E.164 phone (e.g. +447...)",
+        "type": "string"
+      },
+      "startIso": {
+        "description": "Start time, ISO8601 with timezone",
+        "type": "string"
+      },
+      "duration": {
+        "description": "Duration minutes",
+        "maximum": 240,
+        "type": "integer",
+        "minimum": 15
+      }
+    },
+    "type": "object",
+    "required": [
+      "startIso",
+      "endIso",
+      "clientName",
+      "clientPhone",
+      "serviceName",
+      "duration"
+    ]
+  },
+  "response_mapping": {
+    "error": "$.error",
+    "htmlLink": "$.htmlLink",
+    "calendarId": "$.calendarId",
+    "code": "$.code",
+    "ok": "$.ok",
+    "eventId": "$.eventId",
+    "alreadyExists": "$.alreadyExists",
+    "startLocalPretty": "$.startLocalPretty",
+    "therapist": "$.therapist"
+  },
+  "timeout_ms": 15000
+}

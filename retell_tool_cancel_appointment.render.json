@@ -1,0 +1,46 @@
+{
+  "name": "cancel_appointment",
+  "description": "Cancel an existing booking (requires eventId and calendarId).",
+  "type": "http",
+  "request": {
+    "url": "https://kindthai-retell-mw.onrender.com/booking/cancel",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_template": {
+      "eventId": "{{eventId}}",
+      "calendarId": "{{calendarId}}",
+      "reason": "{{reason}}"
+    }
+  },
+  "input_schema": {
+    "properties": {
+      "eventId": {
+        "description": "Google Calendar eventId to cancel",
+        "type": "string"
+      },
+      "calendarId": {
+        "description": "Calendar that holds the event",
+        "type": "string"
+      },
+      "reason": {
+        "description": "Optional cancellation reason",
+        "type": "string"
+      }
+    },
+    "type": "object",
+    "required": [
+      "eventId",
+      "calendarId"
+    ]
+  },
+  "response_mapping": {
+    "error": "$.error",
+    "eventId": "$.eventId",
+    "calendarId": "$.calendarId",
+    "code": "$.code",
+    "ok": "$.ok"
+  },
+  "timeout_ms": 15000
+}

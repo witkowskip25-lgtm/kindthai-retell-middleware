@@ -1,0 +1,19 @@
+{
+  "name": "parse_date_time",
+  "description": "Parse natural language like 'tomorrow 5pm' into precise London time. Returns startIso, endIso, and human-friendly startLocalPretty.",
+  "type": "http",
+  "method": "POST",
+  "url": "https://kindthai-retell-middleware.onrender.com/datetime/parse",
+  "headers": {
+    "Content-Type": "application/json",
+    "x-retell-number": "{{CALLER_NUMBER_OPTIONAL}}"
+  },
+  "body": {
+    "whenText": "{{WHEN_TEXT}}",
+    "timeZone": "Europe/London",
+    "referenceNowLocal": "{{NOW_LOCAL_ISO_OPTIONAL}}",
+    "durationMins": "{{DURATION_MINS_OPTIONAL}}",
+    "anchorStartIso": "{{ANCHOR_START_ISO_OPTIONAL}}",
+    "clientPhone": "{{CLIENT_PHONE_OPTIONAL}}"
+  }
+}

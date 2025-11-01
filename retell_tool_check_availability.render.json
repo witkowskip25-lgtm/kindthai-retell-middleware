@@ -1,0 +1,53 @@
+{
+  "name": "check_availability",
+  "description": "Check if a given ISO8601 start/end is free for a specific therapist or any therapist.",
+  "type": "http",
+  "request": {
+    "url": "https://kindthai-retell-mw.onrender.com/availability/check",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_template": {
+      "endIso": "{{endIso}}",
+      "startIso": "{{startIso}}",
+      "therapist": "{{therapist}}"
+    }
+  },
+  "input_schema": {
+    "properties": {
+      "endIso": {
+        "description": "End time, ISO8601 with timezone",
+        "type": "string"
+      },
+      "startIso": {
+        "description": "Start time, ISO8601 with timezone (e.g. 2025-10-27T16:00:00+00:00)",
+        "type": "string"
+      },
+      "therapist": {
+        "description": "Which therapist to check (or 'any')",
+        "type": "string",
+        "enum": [
+          "any",
+          "Lilly",
+          "Kat",
+          "Sara"
+        ]
+      }
+    },
+    "type": "object",
+    "required": [
+      "startIso",
+      "endIso"
+    ]
+  },
+  "response_mapping": {
+    "ok": "$.ok",
+    "calendarId": "$.calendarId",
+    "startLocalPretty": "$.startLocalPretty",
+    "anyFree": "$.anyFree",
+    "therapistSelected": "$.therapistSelected",
+    "suggestions": "$.suggestions"
+  },
+  "timeout_ms": 15000
+}

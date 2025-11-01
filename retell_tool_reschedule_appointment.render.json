@@ -1,0 +1,74 @@
+{
+  "name": "reschedule_appointment",
+  "description": "Reschedule an existing booking (optionally change therapist).",
+  "type": "http",
+  "request": {
+    "url": "https://kindthai-retell-mw.onrender.com/booking/reschedule",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_template": {
+      "newEndIso": "{{newEndIso}}",
+      "currentCalendarId": "{{currentCalendarId}}",
+      "newTherapist": "{{newTherapist}}",
+      "eventId": "{{eventId}}",
+      "newStartIso": "{{newStartIso}}",
+      "requestId": "retell-{{requestId}}"
+    }
+  },
+  "input_schema": {
+    "properties": {
+      "newEndIso": {
+        "description": "New end time (ISO8601 w/ timezone)",
+        "type": "string"
+      },
+      "currentCalendarId": {
+        "description": "Calendar that currently holds the event",
+        "type": "string"
+      },
+      "newTherapist": {
+        "description": "Keep same or move to new therapist ('any' allowed)",
+        "type": "string",
+        "enum": [
+          "any",
+          "Lilly",
+          "Kat",
+          "Sara"
+        ]
+      },
+      "eventId": {
+        "description": "Google Calendar eventId to reschedule",
+        "type": "string"
+      },
+      "newStartIso": {
+        "description": "New start time (ISO8601 w/ timezone)",
+        "type": "string"
+      },
+      "requestId": {
+        "description": "Idempotency key (optional)",
+        "type": "string"
+      }
+    },
+    "type": "object",
+    "required": [
+      "eventId",
+      "currentCalendarId",
+      "newStartIso",
+      "newEndIso"
+    ]
+  },
+  "response_mapping": {
+    "error": "$.error",
+    "htmlLink": "$.htmlLink",
+    "calendarId": "$.calendarId",
+    "movedCalendar": "$.movedCalendar",
+    "ok": "$.ok",
+    "endIso": "$.endIso",
+    "eventId": "$.eventId",
+    "startIso": "$.startIso",
+    "code": "$.code",
+    "therapist": "$.therapist"
+  },
+  "timeout_ms": 15000
+}

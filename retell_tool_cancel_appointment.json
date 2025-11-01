@@ -1,0 +1,46 @@
+{
+  "name": "cancel_appointment",
+  "description": "Cancel an existing booking (requires eventId and calendarId).",
+  "type": "http",
+  "request": {
+    "url": "http://localhost:3000/booking/cancel",
+    "body_template": {
+      "reason": "{{reason}}",
+      "eventId": "{{eventId}}",
+      "calendarId": "{{calendarId}}"
+    },
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "input_schema": {
+    "required": [
+      "eventId",
+      "calendarId"
+    ],
+    "type": "object",
+    "properties": {
+      "reason": {
+        "type": "string",
+        "description": "Optional cancellation reason"
+      },
+      "eventId": {
+        "type": "string",
+        "description": "Google Calendar eventId to cancel"
+      },
+      "calendarId": {
+        "type": "string",
+        "description": "Calendar that holds the event"
+      }
+    }
+  },
+  "response_mapping": {
+    "error": "$.error",
+    "ok": "$.ok",
+    "eventId": "$.eventId",
+    "code": "$.code",
+    "calendarId": "$.calendarId"
+  },
+  "timeout_ms": 15000
+}

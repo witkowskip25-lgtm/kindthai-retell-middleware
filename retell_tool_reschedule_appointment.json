@@ -1,0 +1,74 @@
+{
+  "name": "reschedule_appointment",
+  "description": "Reschedule an existing booking (optionally change therapist).",
+  "type": "http",
+  "request": {
+    "url": "http://localhost:3000/booking/reschedule",
+    "body_template": {
+      "newTherapist": "{{newTherapist}}",
+      "currentCalendarId": "{{currentCalendarId}}",
+      "newStartIso": "{{newStartIso}}",
+      "requestId": "retell-{{requestId}}",
+      "eventId": "{{eventId}}",
+      "newEndIso": "{{newEndIso}}"
+    },
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "input_schema": {
+    "required": [
+      "eventId",
+      "currentCalendarId",
+      "newStartIso",
+      "newEndIso"
+    ],
+    "type": "object",
+    "properties": {
+      "newTherapist": {
+        "description": "Keep same or move to new therapist ('any' allowed)",
+        "type": "string",
+        "enum": [
+          "any",
+          "Lilly",
+          "Kat",
+          "Sara"
+        ]
+      },
+      "currentCalendarId": {
+        "type": "string",
+        "description": "Calendar that currently holds the event"
+      },
+      "newStartIso": {
+        "type": "string",
+        "description": "New start time (ISO8601 w/ timezone)"
+      },
+      "requestId": {
+        "type": "string",
+        "description": "Idempotency key (optional)"
+      },
+      "eventId": {
+        "type": "string",
+        "description": "Google Calendar eventId to reschedule"
+      },
+      "newEndIso": {
+        "type": "string",
+        "description": "New end time (ISO8601 w/ timezone)"
+      }
+    }
+  },
+  "response_mapping": {
+    "error": "$.error",
+    "calendarId": "$.calendarId",
+    "ok": "$.ok",
+    "eventId": "$.eventId",
+    "code": "$.code",
+    "movedCalendar": "$.movedCalendar",
+    "startIso": "$.startIso",
+    "therapist": "$.therapist",
+    "htmlLink": "$.htmlLink",
+    "endIso": "$.endIso"
+  },
+  "timeout_ms": 15000
+}

@@ -1,0 +1,87 @@
+{
+  "name": "book_appointment",
+  "description": "Create a booking for a given time window and client into the chosen therapist's calendar.",
+  "type": "http",
+  "request": {
+    "body_template": {
+      "endIso": "{{endIso}}",
+      "serviceName": "{{serviceName}}",
+      "requestId": "retell-{{requestId}}",
+      "clientPhone": "{{clientPhone}}",
+      "clientName": "{{clientName}}",
+      "therapist": "{{therapist}}",
+      "startIso": "{{startIso}}",
+      "duration": "{{duration}}"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "url": "http://localhost:3000/booking/create",
+    "method": "POST"
+  },
+  "input_schema": {
+    "required": [
+      "startIso",
+      "endIso",
+      "clientName",
+      "clientPhone",
+      "serviceName",
+      "duration"
+    ],
+    "properties": {
+      "endIso": {
+        "description": "End time, ISO8601 with timezone",
+        "type": "string"
+      },
+      "serviceName": {
+        "description": "Service label (e.g. 'Thai Massage 60')",
+        "type": "string"
+      },
+      "requestId": {
+        "description": "Caller-provided idempotency key (optional)",
+        "type": "string"
+      },
+      "clientPhone": {
+        "description": "E.164 phone (e.g. +447...)",
+        "type": "string"
+      },
+      "clientName": {
+        "description": "Customer full name",
+        "type": "string"
+      },
+      "therapist": {
+        "enum": [
+          "any",
+          "Lilly",
+          "Kat",
+          "Sara"
+        ],
+        "description": "Therapist or 'any' to auto-pick",
+        "type": "string"
+      },
+      "startIso": {
+        "description": "Start time, ISO8601 with timezone",
+        "type": "string"
+      },
+      "duration": {
+        "description": "Duration minutes",
+        "minimum": 15,
+        "maximum": 240,
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "response_mapping": {
+    "eventId": "$.eventId",
+    "startLocalPretty": "$.startLocalPretty",
+    "error": "$.error",
+    "ok": "$.ok",
+    "calendarId": "$.calendarId",
+    "htmlLink": "$.htmlLink",
+    "code": "$.code",
+    "alreadyExists": "$.alreadyExists",
+    "therapist": "$.therapist"
+  },
+  "timeout_ms": 15000
+}

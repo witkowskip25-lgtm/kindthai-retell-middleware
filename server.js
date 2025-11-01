@@ -1,7 +1,8 @@
 
 require('dotenv').config();
 require('dotenv').config();
-const express = require("express");
+const express = require("express");
+
 
 require("dotenv").config();
 
@@ -15,12 +16,14 @@ const {
   searchEvents
 } = require("./gcal");
 
-const app = express();
+const app = express();
 
-app.use(bookingFindV2);
+
 
 app.use(express.json());
-const datetimeRoutes = require('./src/routes/datetime');
+app.use(bookingFindV2);
+const datetimeRoutes = require('./src/routes/datetime');
+
 
 app.use('/datetime', datetimeRoutes);
 
@@ -487,17 +490,20 @@ app.post("/book2", verifySecret, async (req, res) => {
 
 
 
-const availabilityRoutes = require('./src/routes/availability');
+const availabilityRoutes = require('./src/routes/availability');
+
 
 app.use('/availability', availabilityRoutes);
-const bookingRoutes = require('./src/routes/booking');
+const bookingRoutes = require('./src/routes/booking');
+
 
 app.use('/booking', bookingRoutes);
 
 
 
 
-const therapistsRoutes = require('./src/routes/therapists');
+const therapistsRoutes = require('./src/routes/therapists');
+
 
 app.use('/therapists', therapistsRoutes);
 
@@ -506,9 +512,10 @@ app.get('/health', (_req, res) => {
 });
 
 
-const debugRoutes = require('./src/routes/debug');
-
+const debugRoutes = require('./src/routes/debug');
 const bookingFindV2 = require('./routes/booking_find_v2');
+
+
 app.use('/debug', debugRoutes);
 
 

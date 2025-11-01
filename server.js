@@ -1,4 +1,4 @@
-app.use(bookingFindV2);
+
 require('dotenv').config();
 require('dotenv').config();
 const express = require("express");
@@ -15,7 +15,9 @@ const {
   searchEvents
 } = require("./gcal");
 
-const app = express();
+const app = express();
+app.use(bookingFindV2);
+
 app.use(express.json());
 const datetimeRoutes = require('./src/routes/datetime');
 
@@ -507,6 +509,7 @@ const debugRoutes = require('./src/routes/debug');
 
 const bookingFindV2 = require('./routes/booking_find_v2');
 app.use('/debug', debugRoutes);
+
 
 
 

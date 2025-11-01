@@ -1,7 +1,7 @@
 require('dotenv').config();
 require('dotenv').config();
 const express = require("express");
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 require("dotenv").config();
 
 const {
@@ -17,7 +17,7 @@ const {
 const app = express();
 app.use(express.json());
 const datetimeRoutes = require('./src/routes/datetime');
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 app.use('/datetime', datetimeRoutes);
 
 const TIMEZONE = process.env.GOOGLE_TIMEZONE || "Europe/London";
@@ -252,8 +252,6 @@ const PORT = process.env.PORT || 3000;
 
 const { google } = require("googleapis");
 
-
-const bookingFindV2 = require('./routes/booking_find_v2');
 async function getCalendarSafe() {
   const auth = await getAuth();
   const { google } = require("googleapis");
@@ -316,8 +314,7 @@ app.post("/_debug/window", async (req, res) => {
 });
 
 const chrono = require("chrono-node");
-
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 /** Natural language time -> ISO start/end in Europe/London (DST-safe).
  *  Body: { whenText: "tomorrow 6pm", durationMins: 60 }
  *  Returns: { ok, timeZone, startIso, endIso, parsedText }
@@ -372,11 +369,8 @@ app.post("/nlp/slot", async (req, res) => {
     return res.status(500).json({ ok:false, error: String(e && e.message || e) });
   }
 });
-app.use(bookingFindV2);
 
-app.use(bookingFindV2);
 
-app.use(bookingFindV2);
 
 app.listen(PORT, () => console.log(`Server started on http://localhost:${PORT}`));
 
@@ -490,17 +484,17 @@ app.post("/book2", verifySecret, async (req, res) => {
 
 
 const availabilityRoutes = require('./src/routes/availability');
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 app.use('/availability', availabilityRoutes);
 const bookingRoutes = require('./src/routes/booking');
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 app.use('/booking', bookingRoutes);
 
 
 
 
 const therapistsRoutes = require('./src/routes/therapists');
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 app.use('/therapists', therapistsRoutes);
 
 app.get('/health', (_req, res) => {
@@ -509,8 +503,9 @@ app.get('/health', (_req, res) => {
 
 
 const debugRoutes = require('./src/routes/debug');
-const bookingFindV2 = require('./routes/booking_find_v2');
+
 app.use('/debug', debugRoutes);
+
 
 
 

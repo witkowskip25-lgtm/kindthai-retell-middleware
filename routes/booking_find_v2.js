@@ -41,7 +41,7 @@ async function listEventsForDay(calendar, calendarIds, dayIso, zone) {
   return all;
 }
 
-router.post('/booking/find_v2', async (req, res) => {
+async function bookingFindHandler(req, res) {
   try {
     const { onDateIso, startIso, endIso, timeZone = 'Europe/London', clientPhone, relaxed = false } = req.body || {};
     if (!timeZone || !(onDateIso || (startIso && endIso))) {
@@ -115,4 +115,8 @@ router.post('/booking/find_v2', async (req, res) => {
   }
 });
 
+router.post('/booking/find_v2', bookingFindHandler);
+router.post('/booking/find', bookingFindHandler);
 module.exports = router;
+
+

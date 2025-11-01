@@ -1,3 +1,4 @@
+app.use(bookingFindV2);
 require('dotenv').config();
 require('dotenv').config();
 const express = require("express");
@@ -504,7 +505,10 @@ app.get('/health', (_req, res) => {
 
 const debugRoutes = require('./src/routes/debug');
 
+const bookingFindV2 = require('./routes/booking_find_v2');
 app.use('/debug', debugRoutes);
+
+
 
 
 
